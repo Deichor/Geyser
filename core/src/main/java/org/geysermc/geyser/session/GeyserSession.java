@@ -174,6 +174,7 @@ import org.geysermc.geyser.session.cache.ChunkCache;
 import org.geysermc.geyser.session.cache.ComponentCache;
 import org.geysermc.geyser.session.cache.EntityCache;
 import org.geysermc.geyser.session.cache.EntityEffectCache;
+import org.geysermc.geyser.session.cache.DduiCache;
 import org.geysermc.geyser.session.cache.FormCache;
 import org.geysermc.geyser.session.cache.InputCache;
 import org.geysermc.geyser.session.cache.LodestoneCache;
@@ -301,6 +302,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     private final BundleCache bundleCache;
     private final ChunkCache chunkCache;
     private final ComponentCache componentCache;
+    private final DduiCache dduiCache;
     private final EntityCache entityCache;
     private final EntityEffectCache effectCache;
     private final FormCache formCache;
@@ -862,6 +864,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         this.bundleCache = new BundleCache(this);
         this.chunkCache = new ChunkCache(this);
         this.componentCache = new ComponentCache(this);
+        this.dduiCache = new DduiCache(this);
         this.entityCache = new EntityCache(this);
         this.effectCache = new EntityEffectCache();
         this.formCache = new FormCache(this);
@@ -2701,12 +2704,13 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
 
     @Override
     public boolean hasFormOpen() {
-        return formCache.hasFormOpen();
+        return formCache.hasFormOpen() || dduiCache.hasScreenOpen();
     }
 
     @Override
     public void closeForm() {
         formCache.closeForms();
+        dduiCache.closeScreens();
     }
 
     public void addCommandEnum(String name, String enums) {

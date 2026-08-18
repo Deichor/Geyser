@@ -38,6 +38,8 @@ import org.cloudburstmc.protocol.bedrock.netty.codec.compression.ZlibCompression
 import org.cloudburstmc.protocol.bedrock.packet.BedrockPacket;
 import org.cloudburstmc.protocol.bedrock.packet.LoginPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ModalFormResponsePacket;
+import org.cloudburstmc.protocol.bedrock.packet.ServerboundDataDrivenScreenClosedPacket;
+import org.cloudburstmc.protocol.bedrock.packet.ServerboundDataStorePacket;
 import org.cloudburstmc.protocol.bedrock.packet.NetworkSettingsPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayStatusPacket;
 import org.cloudburstmc.protocol.bedrock.packet.PlayerAuthInputPacket;
@@ -302,6 +304,24 @@ public class UpstreamPacketHandler extends LoggingPacketHandler {
             return PacketSignal.HANDLED;
         }
         session.executeInEventLoop(() -> session.getFormCache().handleResponse(packet));
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(ServerboundDataStorePacket packet) {
+        if (session.getUpstream().isClosed() || session.isClosed()) {
+            return PacketSignal.HANDLED;
+        }
+        session.executeInEventLoop(() -> session.getDduiCache().handleUpdate(packet));
+        return PacketSignal.HANDLED;
+    }
+
+    @Override
+    public PacketSignal handle(ServerboundDataDrivenScreenClosedPacket packet) {
+        if (session.getUpstream().isClosed() || session.isClosed()) {
+            return PacketSignal.HANDLED;
+        }
+        session.executeInEventLoop(() -> session.getDduiCache().handleClosed(packet));
         return PacketSignal.HANDLED;
     }
 

@@ -29,6 +29,7 @@ include(":velocity")
 include(":viaproxy")
 include(":common")
 include(":core")
+include(":ddui")
 
 // Specify project dirs
 project(":bungeecord").projectDir = file("bootstrap/bungeecord")

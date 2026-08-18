@@ -22,6 +22,7 @@ dependencies {
 
     api(projects.common)
     api(projects.api)
+    api(projects.ddui)
 
     api(libs.yaml) // Used for extensions
     annotationProcessor(libs.configurate.`interface`.ap)
