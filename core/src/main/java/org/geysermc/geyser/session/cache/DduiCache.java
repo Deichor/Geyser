@@ -91,6 +91,11 @@ public class DduiCache {
      * the datastore and property name the screen published under.
      */
     public void handleUpdate(ServerboundDataStorePacket packet) {
+        // A probe, not permanent: whether a client keeps reporting presses after the server edits
+        // the screen is the one thing no test here can answer.
+        GeyserImpl.getInstance().getLogger().info("DDUI <- " + packet.getUpdate().getProperty() + " "
+                + packet.getUpdate().getPath() + " = " + packet.getUpdate().getData()
+                + " (count " + packet.getUpdate().getUpdateCount() + ")");
         for (ScreenSession screen : screens.values()) {
             if (screen.dataStore().equals(packet.getUpdate().getDataStoreName())
                     && screen.property().equals(packet.getUpdate().getProperty())) {

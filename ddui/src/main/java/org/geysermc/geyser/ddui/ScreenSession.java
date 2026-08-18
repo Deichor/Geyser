@@ -61,7 +61,7 @@ public final class ScreenSession {
     private final String property;
 
     private final Map<String, Consumer<Object>> listeners = new HashMap<>();
-    private final Map<String, Integer> updateCounts = new HashMap<>();
+    private int updateCount;
 
     private Map<String, Object> document = new LinkedHashMap<>();
     private ScreenState state = ScreenState.READY;
@@ -160,7 +160,7 @@ public final class ScreenSession {
         update.setProperty(property);
         update.setPath(path);
         update.setData(value instanceof Number number ? number.doubleValue() : value);
-        update.setUpdateCount(nextCount(path));
+        update.setUpdateCount(nextCount());
 
         ClientboundDataStorePacket packet = new ClientboundDataStorePacket();
         packet.setUpdates(List.of(update));
@@ -192,7 +192,7 @@ public final class ScreenSession {
         change.setDataStoreName(dataStore);
         change.setProperty(property);
         change.setNewValue(document);
-        change.setUpdateCount(nextCount(""));
+        change.setUpdateCount(nextCount());
 
         ClientboundDataStorePacket packet = new ClientboundDataStorePacket();
         packet.setUpdates(List.of(change));
@@ -222,6 +222,9 @@ public final class ScreenSession {
         if (!dataStore.equals(update.getDataStoreName()) || !property.equals(update.getProperty())) {
             return;
         }
+        // The client counts in the same space; staying above what it last sent keeps our own
+        // updates from looking stale to it.
+        updateCount = Math.max(updateCount, update.getUpdateCount());
         String path = update.getPath();
         if (!DocumentPath.set(document, path, update.getData())) {
             return;
@@ -248,10 +251,14 @@ public final class ScreenSession {
     }
 
     /**
-     * The counter the client orders updates by. It is tracked per path because a property keeps a
-     * publisher slot per path; a stale count is dropped rather than applied out of order.
+     * The counter the client orders updates by.
+     *
+     * <p>One counter for the whole property rather than one per path. Whether the client compares
+     * per property or per path is not something the wire says - but a single rising number
+     * satisfies both readings, while per-path counters satisfy only the second: two paths each send
+     * a 1, and under a per-property comparison the later one looks stale and is dropped.
      */
-    private int nextCount(String path) {
-        return updateCounts.merge(path, 1, Integer::sum);
+    private int nextCount() {
+        return ++updateCount;
     }
 }

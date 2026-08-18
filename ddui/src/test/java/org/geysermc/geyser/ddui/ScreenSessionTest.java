@@ -90,21 +90,41 @@ class ScreenSessionTest {
     }
 
     @Test
-    void everyPathCountsItsOwnUpdates() {
-        // The client orders updates by this counter per path. Sharing one counter across paths makes
-        // a later write to one path look stale on another, and it is silently dropped.
+    void theUpdateCountRisesAcrossEveryPathAtOnce() {
+        // Counting per path made an edit land once and never again: two paths each sent a 1, and a
+        // client comparing per property reads the second as stale. One rising number is correct
+        // under either reading.
         ScreenSession session = session();
         session.show(document(), null);
         transport.clear();
 
         session.set("count", 1.0d);
-        session.set("count", 2.0d);
         session.set("title", "Ledger");
+        session.set("count", 2.0d);
 
         List<Integer> counts = transport.of(ClientboundDataStorePacket.class).stream()
                 .map(packet -> ((DataStoreUpdate) packet.getUpdates().get(0)).getUpdateCount())
                 .toList();
-        assertEquals(List.of(1, 2, 1), counts);
+        assertEquals(List.of(2, 3, 4), counts, "the publish took 1");
+    }
+
+    @Test
+    void theCountStaysAheadOfWhatTheClientReported() {
+        // The client counts in the same space. An update that repeats a number it has already used
+        // is the failure this guards: it is dropped, and the screen silently stops updating.
+        ScreenSession session = session();
+        session.show(document(), null);
+
+        DataStoreUpdate fromClient = update(session, "count", 9.0d);
+        fromClient.setUpdateCount(41);
+        session.handleUpdate(fromClient);
+        transport.clear();
+
+        session.set("title", "Ledger");
+
+        DataStoreUpdate sent = (DataStoreUpdate) transport.of(ClientboundDataStorePacket.class)
+                .get(0).getUpdates().get(0);
+        assertEquals(42, sent.getUpdateCount());
     }
 
     @Test

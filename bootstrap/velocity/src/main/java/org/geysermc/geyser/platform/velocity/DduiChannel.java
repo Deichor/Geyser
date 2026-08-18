@@ -160,9 +160,14 @@ public final class DduiChannel {
 
     private void set(UUID uuid, String ref, JsonObject request) {
         ScreenSession screen = open.get(key(uuid, ref));
-        if (screen != null) {
-            screen.set(request.get("path").getAsString(), value(request.get("value").getAsJsonPrimitive()));
+        if (screen == null) {
+            logger.info("DDUI -> no open screen for ref {}", ref);
+            return;
         }
+        String path = request.get("path").getAsString();
+        Object value = value(request.get("value").getAsJsonPrimitive());
+        logger.info("DDUI -> set {} = {}", path, value);
+        screen.set(path, value);
     }
 
     private void close(UUID uuid, String ref) {
