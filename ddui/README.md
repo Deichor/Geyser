@@ -72,12 +72,53 @@ A component is selected by a `<kind>_visible` marker, not by a type field:
 Paths are addressed as `layout[3].label`, even though the layout is an object keyed by the decimal
 index. `onClick` is a number the client increments; a press arrives as a write to that path.
 
+| `image_visible` | `visible, image_src, image_width, image_pack, image_onClick, image_clickable, image_tooltip` |
+
+The image row has no equivalent in any published API — it is in the screen the client ships, and
+`image_pack` plus `image_src` name a texture in a resource pack, which is how a DDUI screen shows
+art that is not Minecraft's own.
+
 `minecraft:message_box`: `{ title, body, button1: {label, tooltip, onClick}, button2: {...} }`.
+
+## Screens supplied by a resource pack
+
+A pack defines a screen at `<pack>/ddui/root/<name>.json`:
+
+```json
+{
+  "format_version": "1.21.130",
+  "minecraft:ui-root": {
+    "description": { "identifier": "example:my_screen" },
+    "attribs": { "root_point": "minecraft:screen" },
+    "layout": { "markup": [
+      { "component": "Context",
+        "attribs": { "data": { "$path": "$.example.my_screen_data_{instanceId}" } },
+        "children": [ ... ] }
+    ] }
+  }
+}
+```
+
+`description.identifier` is the screen id sent in `ClientboundDataDrivenUIShowScreenPacket`. The
+root `Context` names the datastore and property it reads, with `{instanceId}` substituted from the
+show packet — which is what ties the two packets together. Inside it, `$relativePath` addresses
+fields of that property.
+
+Components: `Context`, `Context.List`, `Panel`, `Panel.Text`, `Panel.Spacing`, `Panel.Decoration`,
+`Panel.CloseButton`, `Visibility`, `Container.Layout`, `Container.Slot`, `ScrollableGridLayout`,
+`Form.Button`, `Form.Divider`, `Form.Dropdown`, `Form.Image`, `Form.ScrollView`, `Form.Slider`,
+`Form.Switch`, `Form.TextField`.
+
+A binding ends in an accessor: `.getString`, `.getNumber`, `.getBoolean`, `.action` (fires and
+leaves the screen open) or `.closeAction` (fires and closes it).
 
 ## Provenance
 
-The screen ids, property prefixes, document shapes and binding paths above were read off
-[LeviLamina](https://github.com/LiteLDev/LeviLamina)'s DDUI implementation, which drives the same
-screens from inside the vanilla server. The packet layouts come from the Bedrock codec's own
-serializers. Neither is a published specification, so `WireRoundTripTest` runs a whole form through
-the real codec rather than trusting the shapes by eye.
+The packet layouts come from the Bedrock codec's own serializers. The screen documents come from
+the client's own resource pack, at `assets/resource_packs/vanilla_1.21.130/ddui/root/` — which is
+the only place they exist: the dedicated server bundle does not ship them, `Mojang/bedrock-samples`
+carries only JSON UI, and Microsoft documents the scripting API rather than the screens.
+
+None of that is a published specification, so `WireRoundTripTest` runs a whole form through the
+real codec rather than trusting the shapes by eye, and the update count is pinned to what a live
+client was measured to accept rather than to what the field name suggests.
