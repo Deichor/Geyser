@@ -144,6 +144,16 @@ public final class ScreenSession {
      * string here - anything richer has to go through {@link #republish()}.
      */
     public void set(String path, Object value) {
+        set(path, value, null);
+    }
+
+    /**
+     * As {@link #set(String, Object)}, but sends {@code count} verbatim.
+     *
+     * <p>Only here because what the client does with this number is not settled: a live probe
+     * accepted 1 and rejected everything above it, which no reading of the wire predicts.
+     */
+    public void set(String path, Object value, @Nullable Integer count) {
         if (!(value instanceof Number || value instanceof Boolean || value instanceof String)) {
             throw new IllegalArgumentException("A datastore path update carries a number, a boolean or a string, not "
                     + (value == null ? "null" : value.getClass().getName()));
@@ -160,7 +170,7 @@ public final class ScreenSession {
         update.setProperty(property);
         update.setPath(path);
         update.setData(value instanceof Number number ? number.doubleValue() : value);
-        update.setUpdateCount(nextCount());
+        update.setUpdateCount(count != null ? count : nextCount());
 
         ClientboundDataStorePacket packet = new ClientboundDataStorePacket();
         packet.setUpdates(List.of(update));

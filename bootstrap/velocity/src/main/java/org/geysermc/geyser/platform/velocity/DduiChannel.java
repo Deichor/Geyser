@@ -112,6 +112,7 @@ public final class DduiChannel {
                 switch (op) {
                     case "open" -> open(session, uuid, ref, request);
                     case "set" -> set(uuid, ref, request);
+                    case "refresh" -> refresh(uuid, ref);
                     case "close" -> close(uuid, ref);
                     default -> reply(uuid, error(ref, "unknown op " + op));
                 }
@@ -166,8 +167,18 @@ public final class DduiChannel {
         }
         String path = request.get("path").getAsString();
         Object value = value(request.get("value").getAsJsonPrimitive());
-        logger.info("DDUI -> set {} = {}", path, value);
-        screen.set(path, value);
+        Integer count = request.has("count") ? request.get("count").getAsInt() : null;
+        logger.info("DDUI -> set {} = {} (count {})", path, value, count);
+        screen.set(path, value, count);
+    }
+
+    /** Resends the whole property, which is the one shape the client is known to accept. */
+    private void refresh(UUID uuid, String ref) {
+        ScreenSession screen = open.get(key(uuid, ref));
+        if (screen != null) {
+            logger.info("DDUI -> refresh {}", ref);
+            screen.republish();
+        }
     }
 
     private void close(UUID uuid, String ref) {
