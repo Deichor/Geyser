@@ -53,6 +53,16 @@ import java.util.function.Consumer;
  */
 public final class ScreenSession {
 
+    /**
+     * What a path update carries in the field the codec calls an update count.
+     *
+     * <p>Measured against a live client, not derived: 1 is applied and 2 and 3 are silently
+     * dropped, whether the number rises per path or per property. So it is not the ordering
+     * counter it looks like, and treating it as one is what made a live edit land exactly once.
+     * A whole-property change still counts up - that is the publish, and it is accepted once.
+     */
+    private static final int PATH_UPDATE_COUNT = 1;
+
     private final DduiTransport transport;
     private final String screenId;
     private final int formId;
@@ -148,10 +158,8 @@ public final class ScreenSession {
     }
 
     /**
-     * As {@link #set(String, Object)}, but sends {@code count} verbatim.
-     *
-     * <p>Only here because what the client does with this number is not settled: a live probe
-     * accepted 1 and rejected everything above it, which no reading of the wire predicts.
+     * As {@link #set(String, Object)}, but sends {@code count} verbatim. Kept for probing; the
+     * default is what a live client actually accepts.
      */
     public void set(String path, Object value, @Nullable Integer count) {
         if (!(value instanceof Number || value instanceof Boolean || value instanceof String)) {
@@ -170,7 +178,7 @@ public final class ScreenSession {
         update.setProperty(property);
         update.setPath(path);
         update.setData(value instanceof Number number ? number.doubleValue() : value);
-        update.setUpdateCount(count != null ? count : nextCount());
+        update.setUpdateCount(count != null ? count : PATH_UPDATE_COUNT);
 
         ClientboundDataStorePacket packet = new ClientboundDataStorePacket();
         packet.setUpdates(List.of(update));
@@ -190,6 +198,9 @@ public final class ScreenSession {
 
     /**
      * Resends the current document as one change.
+     *
+     * <p>Not a way to edit an open screen: a client that has already taken the property ignores a
+     * later change to it. Live edits go through {@link #set}.
      */
     public void republish() {
         if (state == ScreenState.SHOWING) {
@@ -260,14 +271,6 @@ public final class ScreenSession {
         }
     }
 
-    /**
-     * The counter the client orders updates by.
-     *
-     * <p>One counter for the whole property rather than one per path. Whether the client compares
-     * per property or per path is not something the wire says - but a single rising number
-     * satisfies both readings, while per-path counters satisfy only the second: two paths each send
-     * a 1, and under a per-property comparison the later one looks stale and is dropped.
-     */
     private int nextCount() {
         return ++updateCount;
     }

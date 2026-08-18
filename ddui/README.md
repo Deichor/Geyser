@@ -25,8 +25,12 @@ A `DataStoreChange` replaces a whole property and can carry any tree (map, list,
 double, bool, null). A `DataStoreUpdate` targets one path but only carries a double, a boolean or a
 string — so a structural edit costs the whole property either way.
 
-Both directions are ordered by an update count. It is tracked per path, because a property keeps a
-publisher slot per path and a stale count is dropped rather than applied out of order.
+The field the codec calls an update count is not an ordering counter, whatever it looks like.
+Measured against a live client: a path update carrying 1 is applied, and 2 and 3 are silently
+dropped — whether the number rises per path or per property. `ScreenSession` therefore pins it to 1
+for path updates. A whole-property change counts up normally, but only the first one lands: once a
+client has taken a property, a later change to it is ignored, so **live edits only work through a
+path update**.
 
 ## Screen and property
 

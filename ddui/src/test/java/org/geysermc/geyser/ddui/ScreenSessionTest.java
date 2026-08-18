@@ -90,10 +90,10 @@ class ScreenSessionTest {
     }
 
     @Test
-    void theUpdateCountRisesAcrossEveryPathAtOnce() {
-        // Counting per path made an edit land once and never again: two paths each sent a 1, and a
-        // client comparing per property reads the second as stale. One rising number is correct
-        // under either reading.
+    void aPathUpdateAlwaysCarriesTheCountAClientAccepts() {
+        // Measured, not derived: a live client applies an update carrying 1 and silently drops 2
+        // and 3. Treating this field as the ordering counter it resembles made a live edit land
+        // exactly once and never again, which is the regression this pins down.
         ScreenSession session = session();
         session.show(document(), null);
         transport.clear();
@@ -105,26 +105,7 @@ class ScreenSessionTest {
         List<Integer> counts = transport.of(ClientboundDataStorePacket.class).stream()
                 .map(packet -> ((DataStoreUpdate) packet.getUpdates().get(0)).getUpdateCount())
                 .toList();
-        assertEquals(List.of(2, 3, 4), counts, "the publish took 1");
-    }
-
-    @Test
-    void theCountStaysAheadOfWhatTheClientReported() {
-        // The client counts in the same space. An update that repeats a number it has already used
-        // is the failure this guards: it is dropped, and the screen silently stops updating.
-        ScreenSession session = session();
-        session.show(document(), null);
-
-        DataStoreUpdate fromClient = update(session, "count", 9.0d);
-        fromClient.setUpdateCount(41);
-        session.handleUpdate(fromClient);
-        transport.clear();
-
-        session.set("title", "Ledger");
-
-        DataStoreUpdate sent = (DataStoreUpdate) transport.of(ClientboundDataStorePacket.class)
-                .get(0).getUpdates().get(0);
-        assertEquals(42, sent.getUpdateCount());
+        assertEquals(List.of(1, 1, 1), counts);
     }
 
     @Test
