@@ -70,6 +70,7 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
 
     private final ProxyServer proxyServer;
     private final PluginContainer container;
+    private final Logger logger;
     private final GeyserVelocityLogger geyserLogger;
     private GeyserPluginConfig geyserConfig;
     private GeyserVelocityInjector geyserInjector;
@@ -85,6 +86,7 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
     public GeyserVelocityPlugin(ProxyServer server, PluginContainer container, Logger logger) {
         this.proxyServer = server;
         this.container = container;
+        this.logger = logger;
         this.geyserLogger = new GeyserVelocityLogger(logger);
     }
 
@@ -204,6 +206,7 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
     @Subscribe
     public void onInit(ProxyInitializeEvent event) {
         this.onGeyserInitialize();
+        new DduiChannel(proxyServer, logger).register(this);
     }
 
     @Subscribe
