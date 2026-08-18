@@ -29,6 +29,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import lombok.RequiredArgsConstructor;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.cloudburstmc.protocol.bedrock.packet.ClientboundDataDrivenUIReloadPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ServerboundDataDrivenScreenClosedPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ServerboundDataStorePacket;
 import org.geysermc.geyser.GeyserImpl;
@@ -68,7 +69,26 @@ public class DduiCache {
      * A session against a screen supplied by a resource pack, which names its own datastore and
      * property rather than deriving them from a vanilla prefix.
      */
+    /**
+     * Tells the client to re-read its data-driven screens.
+     *
+     * The screens a client knows come from the packs it has applied, and a server's pack arrives
+     * after that set is first built — so a screen this network defines is not one the client has
+     * heard of until it looks again. Nothing reports the difference: an unknown screen id opens an
+     * empty screen rather than an error.
+     */
+    public void reloadScreens() {
+        session.sendUpstreamPacket(new ClientboundDataDrivenUIReloadPacket());
+        reloaded = true;
+    }
+
+    private boolean reloaded;
+
     public ScreenSession newPackScreen(String screenId, String dataStore, String propertyPrefix) {
+        // Once per session, and only for a screen that cannot be vanilla's.
+        if (!reloaded) {
+            reloadScreens();
+        }
         int formId = session.getFormCache().nextFormId();
         ScreenSession screen = new ScreenSession(session::sendUpstreamPacket, screenId, formId, formId,
                 dataStore, propertyPrefix + formId);
