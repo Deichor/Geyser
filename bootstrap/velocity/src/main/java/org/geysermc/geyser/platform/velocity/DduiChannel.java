@@ -49,6 +49,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -66,6 +67,9 @@ import java.util.UUID;
 public final class DduiChannel {
 
     public static final MinecraftChannelIdentifier CHANNEL = MinecraftChannelIdentifier.create("cubizor", "ddui");
+
+    /** How long a client is given to rebuild its screen set before being asked for one. */
+    private static final long RELOAD_SETTLE_MILLIS = 1500L;
 
     private final ProxyServer proxy;
     private final Logger logger;
@@ -135,8 +139,9 @@ public final class DduiChannel {
 
     private void open(GeyserSession session, UUID uuid, String ref, JsonObject request) {
         String screenId = request.get("screen").getAsString();
+        boolean packScreen = request.has("dataStore");
         ScreenSession screen;
-        if (request.has("dataStore")) {
+        if (packScreen) {
             // The property name ends in the instance id, because that is what the screen's root
             // context substitutes - so the two are derived together rather than passed separately.
             screen = session.getDduiCache().newPackScreen(screenId, request.get("dataStore").getAsString(),
@@ -154,10 +159,20 @@ public final class DduiChannel {
         }
 
         Map<String, Object> document = object(request.getAsJsonObject("document"));
-        screen.show(document, reason -> {
+        Runnable show = () -> screen.show(document, reason -> {
             open.remove(key(uuid, ref));
             reply(uuid, closed(ref, reason.name()));
         });
+
+        if (packScreen) {
+            // A reload rebuilds the screen set from every applied pack, and that is not instant.
+            // Asking for the screen in the same breath races it, and losing that race looks exactly
+            // like a screen that does not exist: an empty window and no error.
+            logger.info("DDUI -> reloaded, showing {} shortly", screenId);
+            session.scheduleInEventLoop(show, RELOAD_SETTLE_MILLIS, TimeUnit.MILLISECONDS);
+        } else {
+            show.run();
+        }
     }
 
     private void set(UUID uuid, String ref, JsonObject request) {
