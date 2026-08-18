@@ -137,9 +137,10 @@ public final class DduiChannel {
         String screenId = request.get("screen").getAsString();
         ScreenSession screen;
         if (request.has("dataStore")) {
+            // The property name ends in the instance id, because that is what the screen's root
+            // context substitutes - so the two are derived together rather than passed separately.
             screen = session.getDduiCache().newPackScreen(screenId, request.get("dataStore").getAsString(),
-                    request.get("property").getAsString(),
-                    request.has("instanceId") ? request.get("instanceId").getAsInt() : null);
+                    request.get("propertyPrefix").getAsString());
         } else {
             screen = session.getDduiCache().newVanillaScreen(screenId, propertyPrefixFor(screenId));
         }

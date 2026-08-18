@@ -68,11 +68,10 @@ public class DduiCache {
      * A session against a screen supplied by a resource pack, which names its own datastore and
      * property rather than deriving them from a vanilla prefix.
      */
-    public ScreenSession newPackScreen(String screenId, String dataStore, String property,
-                                       @Nullable Integer instanceId) {
+    public ScreenSession newPackScreen(String screenId, String dataStore, String propertyPrefix) {
         int formId = session.getFormCache().nextFormId();
-        ScreenSession screen = new ScreenSession(session::sendUpstreamPacket, screenId, formId, instanceId,
-                dataStore, property);
+        ScreenSession screen = new ScreenSession(session::sendUpstreamPacket, screenId, formId, formId,
+                dataStore, propertyPrefix + formId);
         screens.put(formId, screen);
         return screen;
     }
