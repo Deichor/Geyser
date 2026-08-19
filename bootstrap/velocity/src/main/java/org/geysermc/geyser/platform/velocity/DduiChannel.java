@@ -118,6 +118,7 @@ public final class DduiChannel {
                     case "set" -> set(uuid, ref, request);
                     case "refresh" -> refresh(uuid, ref);
                     case "close" -> close(uuid, ref);
+                    case "form" -> form(session, uuid, ref, request);
                     default -> reply(uuid, error(ref, "unknown op " + op));
                 }
             } catch (Exception e) {
@@ -197,6 +198,20 @@ public final class DduiChannel {
         }
     }
 
+    /**
+     * Sends a JSON-UI form the backend serialised, or replaces the one it already has open.
+     *
+     * <p>A form is not a data-driven screen, but it rides this channel because a backend already
+     * has a route here and one proxy handler is one deployment. Cumulus is not involved: the
+     * backend owns the payload and gets the raw response back.
+     */
+    private void form(GeyserSession session, UUID uuid, String ref, JsonObject request) {
+        boolean update = request.has("update") && request.get("update").getAsBoolean();
+        String payload = request.get("form").getAsString();
+        logger.info("DDUI -> form {} ({})", ref, update ? "update" : "open");
+        session.getFormCache().sendRawForm(payload, update, response -> reply(uuid, formResponse(ref, response)));
+    }
+
     private void close(UUID uuid, String ref) {
         ScreenSession screen = open.get(key(uuid, ref));
         if (screen != null) {
@@ -247,6 +262,15 @@ public final class DduiChannel {
             message.addProperty("value", bool);
         } else {
             message.addProperty("value", String.valueOf(value));
+        }
+        return message;
+    }
+
+    /** A cancelled form answers with no data at all, which is not the same as an empty response. */
+    private static JsonObject formResponse(String ref, String data) {
+        JsonObject message = reply("formResponse", ref);
+        if (data != null) {
+            message.addProperty("data", data);
         }
         return message;
     }
