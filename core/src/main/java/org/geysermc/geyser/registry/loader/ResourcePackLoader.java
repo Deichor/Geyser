@@ -86,6 +86,8 @@ public class ResourcePackLoader implements RegistryLoader<Path, Map<UUID, Resour
 
     private static final boolean SHOW_RESOURCE_PACK_LENGTH_WARNING = Boolean.parseBoolean(System.getProperty("Geyser.ShowResourcePackLengthWarning", "true"));
 
+
+
     /**
      * Loop through the packs directory and locate valid resource pack files
      */

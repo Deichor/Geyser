@@ -61,6 +61,7 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.net.SocketAddress;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Optional;
@@ -80,7 +81,25 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
     private boolean started = false;
 
     @Getter
-    private final Path configFolder = Paths.get("plugins/" + GeyserImpl.NAME + "-Velocity/");
+    /**
+     * Where this plugin keeps its config and its packs.
+     *
+     * Velocity gives every plugin `plugins/<id>` and tooling places files there, but Geyser has
+     * always written to its `name` instead — two folders for one plugin, and anything dropped in
+     * the one Velocity names is never read. The id is what the platform and everything built on it
+     * agree on, so that is what this follows; the old folder is still read when it is the only one
+     * present, so an existing install keeps its config.
+     */
+    private final Path configFolder = resolveConfigFolder();
+
+    private static Path resolveConfigFolder() {
+        Path byId = Paths.get("plugins/geyser/");
+        Path byName = Paths.get("plugins/" + GeyserImpl.NAME + "-Velocity/");
+        if (!Files.isDirectory(byId) && Files.isRegularFile(byName.resolve("config.yml"))) {
+            return byName;
+        }
+        return byId;
+    }
 
     @Inject
     public GeyserVelocityPlugin(ProxyServer server, PluginContainer container, Logger logger) {
