@@ -1880,6 +1880,15 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         return doSendForm(form);
     }
 
+    @Override
+    public boolean updateForm(@NonNull Form form) {
+        if (!formCache.hasFormOpen()) {
+            return false;
+        }
+        formCache.updateForm(form);
+        return true;
+    }
+
     /**
      * Sends a form without first closing any open dialog. This should only be used by {@link org.geysermc.geyser.session.dialog.Dialog}s.
      */
