@@ -148,6 +148,26 @@ public class FormCache {
         return formId;
     }
 
+    /**
+     * Replaces the content of the form the client already has open.
+     *
+     * <p>A {@link ServerSettingsResponsePacket} is applied to a form that is already on screen,
+     * where a {@link ModalFormRequestPacket} would close it and open a new one. There is no
+     * separate update packet, so this is what a caller has to send to change a form in place.
+     *
+     * <p>The new content is given its own form id and the client answers with that one, so the
+     * form it replaces is dropped here rather than left to be resent or answered.
+     */
+    public void updateForm(Form form) {
+        forms.clear();
+        int formId = addForm(form);
+
+        ServerSettingsResponsePacket packet = new ServerSettingsResponsePacket();
+        packet.setFormId(formId);
+        packet.setFormData(formDefinitions.codecFor(form).jsonData(form));
+        session.sendUpstreamPacket(packet);
+    }
+
     public void resendAllForms() {
         for (Int2ObjectMap.Entry<Form> entry : forms.int2ObjectEntrySet()) {
             sendForm(entry.getIntKey(), entry.getValue());

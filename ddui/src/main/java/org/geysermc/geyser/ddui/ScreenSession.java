@@ -75,6 +75,7 @@ public final class ScreenSession {
 
     private Map<String, Object> document = new LinkedHashMap<>();
     private ScreenState state = ScreenState.READY;
+    private Consumer<String> debug = message -> { };
     private @Nullable Consumer<CloseReason> completion;
 
     /**
@@ -131,6 +132,17 @@ public final class ScreenSession {
      * Publishes {@code document} and asks the client to show the screen. The property has to land
      * first: a screen that renders before its data exists reads nulls.
      */
+    /**
+     * Where this session reports what it puts on the wire.
+     *
+     * <p>A screen the client refuses looks exactly like one it never received: an empty window and
+     * no log line anywhere. Reading back what was actually sent is the only way to tell those apart,
+     * so a caller that wants to can ask for it. Off by default; nothing is formatted unless it is.
+     */
+    public void debugTo(Consumer<String> debug) {
+        this.debug = debug;
+    }
+
     public void show(Map<String, Object> document, @Nullable Consumer<CloseReason> completion) {
         if (state != ScreenState.READY) {
             throw new IllegalStateException("A DDUI session can only be shown once (state: " + state + ")");
@@ -145,6 +157,7 @@ public final class ScreenSession {
         show.setFormId(formId);
         show.setDataInstanceId(instanceId);
         transport.sendDduiPacket(show);
+        debug.accept("show screen=" + screenId + " formId=" + formId + " instanceId=" + instanceId);
 
         state = ScreenState.SHOWING;
     }
@@ -218,6 +231,8 @@ public final class ScreenSession {
         ClientboundDataStorePacket packet = new ClientboundDataStorePacket();
         packet.setUpdates(List.of(change));
         transport.sendDduiPacket(packet);
+        debug.accept("publish " + dataStore + "." + property + " count=" + change.getUpdateCount()
+                + " value=" + document);
     }
 
     /**

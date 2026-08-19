@@ -69,7 +69,7 @@ public final class DduiChannel {
     public static final MinecraftChannelIdentifier CHANNEL = MinecraftChannelIdentifier.create("cubizor", "ddui");
 
     /** How long a client is given to rebuild its screen set before being asked for one. */
-    private static final long RELOAD_SETTLE_MILLIS = 1500L;
+    private static final long RELOAD_SETTLE_MILLIS = 5000L;
 
     private final ProxyServer proxy;
     private final Logger logger;

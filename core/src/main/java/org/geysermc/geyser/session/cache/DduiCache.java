@@ -62,7 +62,7 @@ public class DduiCache {
         int formId = session.getFormCache().nextFormId();
         ScreenSession screen = ScreenSession.vanilla(session::sendUpstreamPacket, screenId, propertyPrefix, formId);
         screens.put(formId, screen);
-        return screen;
+        return track(screen);
     }
 
     /**
@@ -80,6 +80,7 @@ public class DduiCache {
     public void reloadScreens() {
         session.sendUpstreamPacket(new ClientboundDataDrivenUIReloadPacket());
         reloaded = true;
+        GeyserImpl.getInstance().getLogger().info("DDUI reload sent");
     }
 
     private boolean reloaded;
@@ -93,6 +94,19 @@ public class DduiCache {
         ScreenSession screen = new ScreenSession(session::sendUpstreamPacket, screenId, formId, formId,
                 dataStore, propertyPrefix + formId);
         screens.put(formId, screen);
+        return track(screen);
+    }
+
+    /**
+     * Puts a session's traffic in the log when debug mode is on.
+     *
+     * <p>A screen the client refuses and one it never received look identical from here — an empty
+     * window, and nothing said anywhere. This is the only way to see which of the two happened.
+     */
+    private ScreenSession track(ScreenSession screen) {
+        if (GeyserImpl.getInstance().config().debugMode()) {
+            screen.debugTo(message -> GeyserImpl.getInstance().getLogger().info("DDUI " + message));
+        }
         return screen;
     }
 
