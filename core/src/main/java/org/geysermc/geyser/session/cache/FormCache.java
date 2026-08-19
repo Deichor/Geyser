@@ -66,9 +66,17 @@ public class FormCache {
     }
 
     public int addForm(Form form) {
-        int formId = formIdCounter.getAndIncrement();
+        int formId = nextFormId();
         forms.put(formId, form);
         return formId;
+    }
+
+    /**
+     * Hands out the next form id on this connection. Shared with {@link DduiCache} so that an id
+     * identifies one screen regardless of which system opened it.
+     */
+    public int nextFormId() {
+        return formIdCounter.getAndIncrement();
     }
 
     public void showForm(Form form) {
