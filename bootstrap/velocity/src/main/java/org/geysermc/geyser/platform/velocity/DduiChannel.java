@@ -119,6 +119,11 @@ public final class DduiChannel {
                     case "refresh" -> refresh(uuid, ref);
                     case "close" -> close(uuid, ref);
                     case "form" -> form(session, uuid, ref, request);
+                    // Answers so a backend can find out this proxy speaks the channel at all. A
+                    // plugin message to a channel nobody registered is dropped without a word, so
+                    // without an answer a server cannot tell a proxy that ignored a form from one
+                    // that showed it, and routing menus here would mean losing them silently.
+                    case "ping" -> reply(uuid, reply("pong", ref));
                     default -> reply(uuid, error(ref, "unknown op " + op));
                 }
             } catch (Exception e) {
