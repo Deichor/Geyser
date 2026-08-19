@@ -182,16 +182,26 @@ public class FormCache {
             return;
         }
 
-        Form form = forms.remove(response.getFormId());
+        int formId = response.getFormId();
+        Form form = forms.get(formId);
         if (form == null) {
             return;
         }
 
+        // Left in the map while its handler runs. A handler that answers a press by replacing the
+        // screen calls updateForm, which refuses when nothing is open - and removing the form up
+        // front made that true of every press, so an in-place answer to a button was impossible and
+        // the only way back was to close the screen and open another.
+        //
+        // updateForm clears the map and re-adds under a fresh id, so the removal below finds
+        // nothing and leaves the replacement alone.
         try {
             formDefinitions.definitionFor(form)
                     .handleFormResponse(form, response.getFormData());
         } catch (Exception e) {
             GeyserImpl.getInstance().getLogger().error("Error while processing form response!", e);
+        } finally {
+            forms.remove(formId, form);
         }
     }
 
