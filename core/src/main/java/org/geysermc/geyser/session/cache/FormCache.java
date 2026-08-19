@@ -97,6 +97,10 @@ public class FormCache {
         formRequestPacket.setFormId(formId);
         formRequestPacket.setFormData(jsonData);
         session.sendUpstreamPacket(formRequestPacket);
+        if (GeyserImpl.getInstance().config().debugMode()) {
+            GeyserImpl.getInstance().getLogger().info("FORM request id=" + formId
+                    + " at=" + System.currentTimeMillis());
+        }
 
         // Hack to fix the (url) image loading bug
         if (form instanceof SimpleForm) {
@@ -175,6 +179,11 @@ public class FormCache {
     }
 
     public void handleResponse(ModalFormResponsePacket response) {
+        session.formResponded();
+        if (GeyserImpl.getInstance().config().debugMode()) {
+            GeyserImpl.getInstance().getLogger().info("FORM response id=" + response.getFormId()
+                    + " at=" + System.currentTimeMillis());
+        }
         Consumer<String> raw = rawForms.remove(response.getFormId());
         if (raw != null) {
             rawForms.clear();
