@@ -32,6 +32,7 @@ import org.cloudburstmc.protocol.bedrock.data.AttributeData;
 import org.cloudburstmc.protocol.bedrock.packet.ClientboundCloseFormPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ModalFormRequestPacket;
 import org.cloudburstmc.protocol.bedrock.packet.ModalFormResponsePacket;
+import org.cloudburstmc.protocol.bedrock.packet.ServerSettingsResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 import org.geysermc.cumulus.form.Form;
 import org.geysermc.cumulus.form.SimpleForm;
@@ -43,6 +44,7 @@ import org.geysermc.geyser.session.GeyserSession;
 import java.util.Collections;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 @RequiredArgsConstructor
 public class FormCache {
@@ -55,6 +57,7 @@ public class FormCache {
     private final FormDefinitions formDefinitions = FormDefinitions.instance();
     private final AtomicInteger formIdCounter = new AtomicInteger(0);
     private final Int2ObjectMap<Form> forms = new Int2ObjectOpenHashMap<>();
+    private final Int2ObjectMap<Consumer<String>> rawForms = new Int2ObjectOpenHashMap<>();
     private final GeyserSession session;
 
     public boolean hasFormOpen() {
@@ -62,13 +65,21 @@ public class FormCache {
         // so technically this returns "has forms to show" or "has open"
         // Forms are only queued in specific circumstances, such as waiting on
         // previous inventories to close
-        return !forms.isEmpty();
+        return !forms.isEmpty() || !rawForms.isEmpty();
     }
 
     public int addForm(Form form) {
-        int formId = formIdCounter.getAndIncrement();
+        int formId = nextFormId();
         forms.put(formId, form);
         return formId;
+    }
+
+    /**
+     * Hands out the next form id on this connection. Shared with {@link DduiCache} so that a form
+     * id identifies one screen regardless of which system opened it.
+     */
+    public int nextFormId() {
+        return formIdCounter.getAndIncrement();
     }
 
     public void showForm(Form form) {
@@ -86,6 +97,10 @@ public class FormCache {
         formRequestPacket.setFormId(formId);
         formRequestPacket.setFormData(jsonData);
         session.sendUpstreamPacket(formRequestPacket);
+        if (GeyserImpl.getInstance().config().debugMode()) {
+            GeyserImpl.getInstance().getLogger().info("FORM request id=" + formId
+                    + " at=" + System.currentTimeMillis());
+        }
 
         // Hack to fix the (url) image loading bug
         if (form instanceof SimpleForm) {
@@ -111,6 +126,52 @@ public class FormCache {
         }
     }
 
+    /**
+     * Sends a form a backend serialised itself, and answers it there rather than through Cumulus.
+     *
+     * <p>An update travels as {@link ServerSettingsResponsePacket} instead of
+     * {@link ModalFormRequestPacket}: that is the packet the client applies to a form it already
+     * has, so the content is replaced without the screen closing. Each send carries a fresh id and
+     * the client answers with whichever one it last received, which is why a response clears every
+     * pending raw form rather than just its own.
+     */
+    public int sendRawForm(String json, boolean update, Consumer<String> onResponse) {
+        int formId = nextFormId();
+        rawForms.put(formId, onResponse);
+        if (update) {
+            ServerSettingsResponsePacket packet = new ServerSettingsResponsePacket();
+            packet.setFormId(formId);
+            packet.setFormData(json);
+            session.sendUpstreamPacket(packet);
+        } else {
+            ModalFormRequestPacket packet = new ModalFormRequestPacket();
+            packet.setFormId(formId);
+            packet.setFormData(json);
+            session.sendUpstreamPacket(packet);
+        }
+        return formId;
+    }
+
+    /**
+     * Replaces the content of the form the client already has open.
+     *
+     * <p>A {@link ServerSettingsResponsePacket} is applied to a form that is already on screen,
+     * where a {@link ModalFormRequestPacket} would close it and open a new one. There is no
+     * separate update packet, so this is what a caller has to send to change a form in place.
+     *
+     * <p>The new content is given its own form id and the client answers with that one, so the
+     * form it replaces is dropped here rather than left to be resent or answered.
+     */
+    public void updateForm(Form form) {
+        forms.clear();
+        int formId = addForm(form);
+
+        ServerSettingsResponsePacket packet = new ServerSettingsResponsePacket();
+        packet.setFormId(formId);
+        packet.setFormData(formDefinitions.codecFor(form).jsonData(form));
+        session.sendUpstreamPacket(packet);
+    }
+
     public void resendAllForms() {
         for (Int2ObjectMap.Entry<Form> entry : forms.int2ObjectEntrySet()) {
             sendForm(entry.getIntKey(), entry.getValue());
@@ -118,6 +179,18 @@ public class FormCache {
     }
 
     public void handleResponse(ModalFormResponsePacket response) {
+        session.formResponded();
+        if (GeyserImpl.getInstance().config().debugMode()) {
+            GeyserImpl.getInstance().getLogger().info("FORM response id=" + response.getFormId()
+                    + " at=" + System.currentTimeMillis());
+        }
+        Consumer<String> raw = rawForms.remove(response.getFormId());
+        if (raw != null) {
+            rawForms.clear();
+            raw.accept(response.getFormData());
+            return;
+        }
+
         Form form = forms.remove(response.getFormId());
         if (form == null) {
             return;
@@ -132,6 +205,7 @@ public class FormCache {
     }
 
     public void closeForms() {
+        this.rawForms.clear();
         if (!this.forms.isEmpty()) {
             // Copy them to ensure any response handler's sent form isn't instantly cleared
             Int2ObjectMap<Form> copy = new Int2ObjectOpenHashMap<>(this.forms);

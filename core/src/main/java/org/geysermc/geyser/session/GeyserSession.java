@@ -174,6 +174,7 @@ import org.geysermc.geyser.session.cache.ChunkCache;
 import org.geysermc.geyser.session.cache.ComponentCache;
 import org.geysermc.geyser.session.cache.EntityCache;
 import org.geysermc.geyser.session.cache.EntityEffectCache;
+import org.geysermc.geyser.session.cache.DduiCache;
 import org.geysermc.geyser.session.cache.FormCache;
 import org.geysermc.geyser.session.cache.InputCache;
 import org.geysermc.geyser.session.cache.LodestoneCache;
@@ -301,6 +302,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     private final BundleCache bundleCache;
     private final ChunkCache chunkCache;
     private final ComponentCache componentCache;
+    private final DduiCache dduiCache;
     private final EntityCache entityCache;
     private final EntityEffectCache effectCache;
     private final FormCache formCache;
@@ -862,6 +864,7 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         this.bundleCache = new BundleCache(this);
         this.chunkCache = new ChunkCache(this);
         this.componentCache = new ComponentCache(this);
+        this.dduiCache = new DduiCache(this);
         this.entityCache = new EntityCache(this);
         this.effectCache = new EntityEffectCache();
         this.formCache = new FormCache(this);
@@ -1881,6 +1884,45 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     }
 
     /**
+     * How long after a press a form still counts as the one on screen. Off by default, because it
+     * does not work.
+     *
+     * The idea was that a menu following a press is the same menu moving on, so its content could
+     * replace what is on screen instead of closing it. Measured on a real client: the response left
+     * at 1787156735573 and the replacement went out 38 ms later, and nothing appeared — the client
+     * tears its screen down when the button is pressed, so by the time any answer arrives there is
+     * nothing left to replace. No packet from this side prevents that.
+     *
+     * Kept, and kept configurable, because the measurement is worth more than the code: a future
+     * client that holds the screen open would make this work, and the flag is how to find out.
+     */
+    private static final long FORM_REPLACE_WINDOW_MILLIS =
+            Long.getLong("Geyser.FormReplaceWindowMillis", 0L);
+
+    private volatile long formRespondedAt;
+
+    /** Called when the client answers a form, to open the window {@link #replacesOpenForm} reads. */
+    public void formResponded() {
+        this.formRespondedAt = System.currentTimeMillis();
+    }
+
+    private boolean replacesOpenForm() {
+        if (FORM_REPLACE_WINDOW_MILLIS <= 0 || !upstream.isInitialized()) {
+            return false;
+        }
+        return System.currentTimeMillis() - formRespondedAt < FORM_REPLACE_WINDOW_MILLIS;
+    }
+
+    @Override
+    public boolean updateForm(@NonNull Form form) {
+        if (!formCache.hasFormOpen()) {
+            return false;
+        }
+        formCache.updateForm(form);
+        return true;
+    }
+
+    /**
      * Sends a form without first closing any open dialog. This should only be used by {@link org.geysermc.geyser.session.dialog.Dialog}s.
      */
     public void sendDialogForm(@NonNull Form form) {
@@ -1888,8 +1930,24 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
     }
 
     private boolean doSendForm(@NonNull Form form) {
+        boolean debug = geyser.config().debugMode();
+        boolean hadForm = formCache.hasFormOpen();
+        boolean hadInventory = inventoryHolder != null;
+
+        // A form sent straight after a press is the same menu moving on, not a second one. Replacing
+        // the screen's content leaves it where it is; closing and opening takes it away and brings
+        // it back, and between the two the player watches the world. The window covers the trip to
+        // the backend and back, which is the only reason the two sends are not one call.
+        if (replacesOpenForm()) {
+            formCache.updateForm(form);
+            if (debug) {
+                geyser.getLogger().info("FORM replace in place (no close) at=" + System.currentTimeMillis());
+            }
+            return true;
+        }
+
         // Close all currently open forms.
-        if (formCache.hasFormOpen()) {
+        if (hadForm) {
             closeForm();
         }
 
@@ -1906,8 +1964,18 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
         // Open the current form, unless we're in the process of closing another
         // If we're waiting, the form will be sent when Bedrock confirms closing
         // If we don't wait, the client rejects the form as it is busy
-        if (!isClosingInventory() && upstream.isInitialized()) {
+        boolean deferred = isClosingInventory();
+        if (!deferred && upstream.isInitialized()) {
             formCache.resendAllForms();
+        }
+
+        // What a menu costs before it reaches the client: a close packet the player sees as the
+        // screen going away, or a wait on the client confirming an inventory close, which is a
+        // whole round trip with nothing on screen.
+        if (debug) {
+            geyser.getLogger().info("FORM send closeSent=" + hadForm
+                    + " hadInventory=" + hadInventory
+                    + " deferredOnInventoryClose=" + deferred);
         }
 
         return true;
@@ -2701,12 +2769,13 @@ public class GeyserSession implements GeyserConnection, GeyserCommandSource {
 
     @Override
     public boolean hasFormOpen() {
-        return formCache.hasFormOpen();
+        return formCache.hasFormOpen() || dduiCache.hasScreenOpen();
     }
 
     @Override
     public void closeForm() {
         formCache.closeForms();
+        dduiCache.closeScreens();
     }
 
     public void addCommandEnum(String name, String enums) {

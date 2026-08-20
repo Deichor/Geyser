@@ -27,12 +27,14 @@ package org.geysermc.geyser.api.connection;
 
 import org.checkerframework.checker.index.qual.Positive;
 import org.geysermc.api.connection.Connection;
+import org.geysermc.cumulus.form.Form;
 import org.geysermc.geyser.api.bedrock.camera.CameraData;
 import org.geysermc.geyser.api.bedrock.camera.CameraShake;
 import org.geysermc.geyser.api.command.CommandSource;
 import org.geysermc.geyser.api.entity.EntityData;
 import org.geysermc.geyser.api.entity.type.player.GeyserPlayerEntity;
 import org.geysermc.geyser.api.skin.SkinData;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 
 import java.util.NoSuchElementException;
@@ -75,6 +77,22 @@ public interface GeyserConnection extends Connection, CommandSource {
      * Closes the currently open form on the client.
      */
     void closeForm();
+
+    /**
+     * Replaces the content of the form the client already has open.
+     *
+     * <p>Unlike sending a form again, which closes the open one and opens another, this changes
+     * what the player is already looking at. Neither the content nor the type of the form is fixed:
+     * a form of any type may replace one of any other.
+     *
+     * <p>The response is delivered to the handler of the form passed here, not of the form it
+     * replaced.
+     *
+     * @param form the form to show in place of the open one
+     * @return {@code false} if the client has no form open, in which case nothing is sent
+     * @since 2.11.1
+     */
+    boolean updateForm(@NonNull Form form);
 
     /**
      * Gets the Bedrock protocol version of the player.
