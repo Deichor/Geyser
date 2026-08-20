@@ -2,6 +2,7 @@ package org.geysermc.geyser.platform.velocity;
 
 import net.cubizor.carbon.bedrock.ui.JsonObject;
 import net.cubizor.carbon.bedrock.ui.cubizor.CubizorBedrockPack;
+import net.cubizor.carbon.bedrock.ui.pack.FormScreen;
 import net.cubizor.carbon.bedrock.ui.pack.PackContribution;
 import net.cubizor.carbon.bedrock.ui.pack.PackContributionCodec;
 import net.cubizor.carbon.bedrock.ui.pack.PackSyncStore;
@@ -130,5 +131,49 @@ class CubizorPackSyncTest {
         sync.accept("hub", PackContributionCodec.encode(contribution("hub")));
 
         assertEquals(List.of("hub", "shop"), sync.contributors());
+    }
+
+    /**
+     * A backend's own screen reaches the pack this proxy serves.
+     *
+     * The route this covers had never run: until the contribution surface existed, a plugin with its
+     * own Bedrock layout had nowhere to put it, and until a backend answered the request nothing was
+     * announced at all. Both ends now exist and every failure between them is a blank screen on a
+     * phone with nothing in any log — so the whole trip is made here, in bytes, exactly as it is
+     * made in production.
+     */
+    @Test
+    void weavesAContributedScreenIntoTheFormItServes() throws Exception {
+        var screen = new FormScreen("\u00a7r\u00a7c", 520, 312, "shop.board_body", null, null, null, null);
+        var contribution = new PackContribution() {
+            @Override
+            public String getNamespace() {
+                return "shop";
+            }
+
+            @Override
+            public Map<String, JsonObject> controls() {
+                return Map.of("board_body", new JsonObject(Map.of()));
+            }
+
+            @Override
+            public List<FormScreen> formScreens() {
+                return List.of(screen);
+            }
+        };
+
+        // Encoded and decoded, because that is what happens between the shard and here — and the
+        // format moved to carry exactly this.
+        var arrived = PackContributionCodec.decode(PackContributionCodec.encode(contribution));
+        assertEquals(1, arrived.formScreens().size());
+        assertEquals(screen.getMarker(), arrived.formScreens().get(0).getMarker());
+
+        var form = CubizorBedrockPack.serverForm(arrived.formScreens());
+        var variants = ((net.cubizor.carbon.bedrock.ui.JsonArray) ((JsonObject) form.get("long_form")).get("controls"));
+
+        // One more variant than the pack's own screens, and Mojang's gate widened to name the new
+        // marker — a gate that misses one draws Mojang's dialog underneath ours.
+        assertEquals(5, variants.getItems().size());
+        assertTrue(form.toString().contains(screen.getMarker()));
     }
 }

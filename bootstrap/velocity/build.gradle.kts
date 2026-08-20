@@ -16,7 +16,13 @@ dependencies {
     api(libs.cloud.velocity)
 
     // The pack this proxy composes and serves. Shaded, because nothing else on the proxy has it.
-    implementation("net.cubizor.carbon:carbon-bedrock-ui:9.1.0")
+    //
+    // 9.3.0 is not optional once any backend is on Carbon 9.3.0: the contribution format went to 2
+    // there, and a decoder that does not know a version refuses the payload outright rather than
+    // reading half of it. So this proxy is deployed *before* the shards that announce, or their
+    // contributions are dropped and the pack composes without them — silently, from the client's
+    // point of view.
+    implementation("net.cubizor.carbon:carbon-bedrock-ui:9.3.0")
 
     // How a backend's contribution reaches this proxy. Provided by the ProxyBridge plugin, which is
     // where the transport actually lives — this only needs the message types.
