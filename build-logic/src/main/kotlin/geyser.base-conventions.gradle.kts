@@ -26,10 +26,19 @@ dependencies {
 }
 
 repositories {
-    // On, and needed: the pack sync links against carbon-bedrock-ui and proxybridge's api, which
-    // are Titan artefacts. A published build resolves them from GitHub Packages; a developer
-    // building either of them alongside this fork gets them from here.
-    mavenLocal()
+    // The pack sync links against carbon-bedrock-ui and proxybridge's api, both published here.
+    // Credentials are read the same way every Titan repo reads them, so one setting covers all of
+    // them. mavenLocal is deliberately left off: it was on while those two were unpublished, and a
+    // local artefact silently winning over a released one is exactly the kind of difference
+    // between a developer's build and CI that nobody notices until a deploy.
+    maven {
+        name = "TitanPackages"
+        url = uri("https://maven.pkg.github.com/titan-minecraft/*")
+        credentials {
+            username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("GITHUB_ACTOR")
+            password = providers.gradleProperty("gpr.key").orNull ?: System.getenv("TITAN_PKG_READ_TOKEN")
+        }
+    }
 
     mavenCentral()
 

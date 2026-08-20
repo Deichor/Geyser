@@ -16,11 +16,11 @@ dependencies {
     api(libs.cloud.velocity)
 
     // The pack this proxy composes and serves. Shaded, because nothing else on the proxy has it.
-    implementation("net.cubizor.carbon:carbon-bedrock-ui:8.2.0-local")
+    implementation("net.cubizor.carbon:carbon-bedrock-ui:9.1.0")
 
     // How a backend's contribution reaches this proxy. Provided by the ProxyBridge plugin, which is
     // where the transport actually lives — this only needs the message types.
-    compileOnly("net.cubizor.proxybridge:api:4.0.7")
+    compileOnly("net.cubizor.proxybridge:api:4.2.0")
 
     // Provided by the Titan Velocity fork, which ships the Kotlin runtime in the proxy jar and does
     // not relocate it. Shading a second copy here would be 1.7MB of duplicate classes.
@@ -31,7 +31,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")
     // compileOnly in main because the proxy provides them; a test has no proxy to provide them.
-    testImplementation("net.cubizor.proxybridge:api:4.0.7")
+    testImplementation("net.cubizor.proxybridge:api:4.2.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
