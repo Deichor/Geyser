@@ -176,4 +176,60 @@ class CubizorPackSyncTest {
         assertEquals(5, variants.getItems().size());
         assertTrue(form.toString().contains(screen.getMarker()));
     }
+
+    /**
+     * The bridge being late is not the bridge being absent.
+     *
+     * Geyser and ProxyBridge are two Velocity plugins with no load-order relationship, and on the
+     * network Geyser wins by about a second. A single lookup at boot therefore found nothing,
+     * warned, and returned — and the contribution route was dead for the life of that proxy. It
+     * went unnoticed for as long as no backend answered the request either.
+     */
+    @Test
+    void waitsForABridgeThatIsMerelyLate() throws Exception {
+        var scheduled = new java.util.concurrent.atomic.AtomicInteger();
+        var scheduler = new ScheduledThreadPoolExecutor(1) {
+            @Override
+            public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
+                scheduled.incrementAndGet();
+                return super.schedule(() -> { }, 0, TimeUnit.MILLISECONDS);
+            }
+        };
+        var sync = new CubizorPackSync(
+                CubizorBedrockPack.syncStore(Files.createTempDirectory("pack-sync-late")),
+                NOPLogger.NOP_LOGGER,
+                scheduler,
+                () -> { throw new IllegalStateException("ProxyBridge is not up"); });
+
+        sync.attach("proxy:25565", 0);
+
+        assertEquals(1, scheduled.get(), "a bridge that is not up yet must be waited for, not given up on");
+    }
+
+    /**
+     * And a bridge that is genuinely absent is given up on rather than retried forever.
+     *
+     * A proxy with no ProxyBridge at all is a supported deployment — it keeps serving whatever it
+     * composed last time — so the wait is bounded and says so once.
+     */
+    @Test
+    void stopsWaitingForABridgeThatIsNotComing() throws Exception {
+        var scheduled = new java.util.concurrent.atomic.AtomicInteger();
+        var scheduler = new ScheduledThreadPoolExecutor(1) {
+            @Override
+            public ScheduledFuture<?> schedule(Runnable command, long delay, TimeUnit unit) {
+                scheduled.incrementAndGet();
+                return super.schedule(() -> { }, 0, TimeUnit.MILLISECONDS);
+            }
+        };
+        var sync = new CubizorPackSync(
+                CubizorBedrockPack.syncStore(Files.createTempDirectory("pack-sync-absent")),
+                NOPLogger.NOP_LOGGER,
+                scheduler,
+                () -> { throw new IllegalStateException("ProxyBridge is not up"); });
+
+        sync.attach("proxy:25565", 30);
+
+        assertEquals(0, scheduled.get(), "the wait is bounded; a proxy with no bridge must not retry forever");
+    }
 }
