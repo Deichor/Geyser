@@ -78,6 +78,7 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
     private IGeyserPingPassthrough geyserPingPassthrough;
     private CommandRegistry commandRegistry;
     private GeyserImpl geyser;
+    private CubizorPackSync packSync;
     private boolean started = false;
 
     @Getter
@@ -226,11 +227,21 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
     public void onInit(ProxyInitializeEvent event) {
         this.onGeyserInitialize();
         new DduiChannel(proxyServer, logger).register(this);
+
+        // The pack this proxy serves is composed here rather than uploaded. Started after Geyser is
+        // initialized because it registers for a Geyser event, and its own first act is to serve
+        // whatever it composed last time — so a restart is invisible to a client unless something
+        // actually changed.
+        this.packSync = new CubizorPackSync(configFolder, logger);
+        this.packSync.start(proxyServer.getBoundAddress().toString());
     }
 
     @Subscribe
     public void onShutdown(ProxyShutdownEvent event) {
         this.onGeyserShutdown();
+        if (this.packSync != null) {
+            this.packSync.stop();
+        }
     }
 
     @Subscribe

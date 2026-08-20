@@ -26,7 +26,10 @@ dependencies {
 }
 
 repositories {
-    // mavenLocal()
+    // On, and needed: the pack sync links against carbon-bedrock-ui and proxybridge's api, which
+    // are Titan artefacts. A published build resolves them from GitHub Packages; a developer
+    // building either of them alongside this fork gets them from here.
+    mavenLocal()
 
     mavenCentral()
 

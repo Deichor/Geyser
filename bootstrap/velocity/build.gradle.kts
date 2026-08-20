@@ -14,6 +14,29 @@ dependencies {
 
     compileOnlyApi(libs.velocity.api)
     api(libs.cloud.velocity)
+
+    // The pack this proxy composes and serves. Shaded, because nothing else on the proxy has it.
+    implementation("net.cubizor.carbon:carbon-bedrock-ui:8.2.0-local")
+
+    // How a backend's contribution reaches this proxy. Provided by the ProxyBridge plugin, which is
+    // where the transport actually lives — this only needs the message types.
+    compileOnly("net.cubizor.proxybridge:api:4.0.7")
+
+    // Provided by the Titan Velocity fork, which ships the Kotlin runtime in the proxy jar and does
+    // not relocate it. Shading a second copy here would be 1.7MB of duplicate classes.
+    compileOnly("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")
+
+    // The pack sync's guards are ordinary logic and are tested as such; Kotlin is on the test
+    // classpath because what it drives is a Kotlin API.
+    testImplementation(libs.junit)
+    testImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")
+    // compileOnly in main because the proxy provides them; a test has no proxy to provide them.
+    testImplementation("net.cubizor.proxybridge:api:4.0.7")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 platformRelocate("it.unimi.dsi.fastutil")
@@ -40,6 +63,10 @@ tasks.withType<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar> {
         exclude(dependency("org.ow2.asm:.*"))
         // Exclude all Kyori dependencies
         exclude(dependency("net.kyori:.*:.*"))
+        // Both are on the proxy already: Kotlin comes with the Titan Velocity fork, and the
+        // ProxyBridge plugin brings its own API.
+        exclude(dependency("org.jetbrains.kotlin:.*"))
+        exclude(dependency("net.cubizor.proxybridge:.*"))
     }
 }
 
