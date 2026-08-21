@@ -153,9 +153,23 @@ def load_requested(args):
     return list(requested)
 
 
-def cells_for(image, cell):
+def art_size(image, cell, ratio):
+    """The pixel size the art is drawn at inside the glyph box, preserving aspect.
+
+    Not the whole cell: Bedrock scales a cell to the line height, so art that fills its cell renders
+    taller than the text beside it, and with nothing left over on the right consecutive glyphs run
+    into each other. Vanilla's own emoji sit at roughly three quarters of their cell with a right
+    margin, which is what [ratio] reproduces.
+    """
+    height = max(1, round(cell * ratio))
+    width = max(1, round(image.width * height / image.height)) if image.height else height
+    return width, height
+
+
+def cells_for(image, cell, ratio):
     """How many square cells this sprite needs. Wide art spans consecutive cells."""
-    return max(1, math.ceil(image.width / image.height)) if image.height else 1
+    width, _ = art_size(image, cell, ratio)
+    return max(1, math.ceil(width / cell))
 
 
 # A stable identity for the pack, so a client updating it replaces the one it holds rather than
@@ -218,6 +232,9 @@ def main():
     parser.add_argument("--mcpack", metavar="NAME",
                         help="also write NAME.mcpack (the glyph pages plus a manifest) next to sprites.json")
     parser.add_argument("--cell", type=int, default=32, help="cell size in px; page is 16x this (default 32)")
+    parser.add_argument("--art-ratio", type=float, default=0.75,
+                        help="fraction of the cell the art fills, leaving the margin that keeps "
+                             "glyphs apart (default 0.75, matching vanilla's emoji)")
     parser.add_argument("--start-page", default="E2", help="first glyph page to fill (default E2)")
     args = parser.parse_args()
 
@@ -256,7 +273,7 @@ def main():
             steve.load()
         resolved.append((HEAD_ATLAS, FALLBACK_HEAD_KEY, head_image(steve)))
 
-    needed = sum(cells_for(image, args.cell) for _, _, image in resolved)
+    needed = sum(cells_for(image, args.cell, args.art_ratio) for _, _, image in resolved)
     capacity = len(pages) * CELLS_PER_PAGE
     if needed > capacity:
         sys.exit(f"{needed} cells needed but only {capacity} free from page {args.start_page}.")
@@ -266,7 +283,7 @@ def main():
     slot = 0
 
     for atlas, key, image in resolved:
-        span = cells_for(image, args.cell)
+        span = cells_for(image, args.cell, args.art_ratio)
         # Never split a sprite across two pages: the glyph would break at the page edge.
         page_index, column = divmod(slot, CELLS_PER_PAGE)
         if column + span > CELLS_PER_PAGE:
@@ -278,12 +295,17 @@ def main():
         if sheet is None:
             sheet = sheets[page] = Image.new("RGBA", (args.cell * 16, args.cell * 16), (0, 0, 0, 0))
 
-        scaled = image.resize((args.cell * span, args.cell), Image.NEAREST)
+        # Drawn into a box the width of the cells it spans, so the leftover sits on the right as
+        # the gap to the next glyph - the same shape vanilla uses.
+        width, height = art_size(image, args.cell, args.art_ratio)
+        box = Image.new("RGBA", (args.cell * span, args.cell), (0, 0, 0, 0))
+        box.paste(image.resize((width, height), Image.NEAREST), (0, (args.cell - height) // 2))
+
         chars = ""
         for part in range(span):
             index = column + part
             row, col = divmod(index, 16)
-            sheet.paste(scaled.crop((part * args.cell, 0, (part + 1) * args.cell, args.cell)),
+            sheet.paste(box.crop((part * args.cell, 0, (part + 1) * args.cell, args.cell)),
                         (col * args.cell, row * args.cell))
             chars += chr(int(page, 16) * 256 + index)
 
