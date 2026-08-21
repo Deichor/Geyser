@@ -259,3 +259,6 @@ locales/
 /languages/
 /custom-skulls.yml
 /permissions.yml
+
+# sprite-glyphs skin download cache
+.skins/

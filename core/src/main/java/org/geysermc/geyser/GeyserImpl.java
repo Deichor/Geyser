@@ -102,6 +102,7 @@ import org.geysermc.geyser.skin.ProvidedSkins;
 import org.geysermc.geyser.skin.SkinProvider;
 import org.geysermc.geyser.text.GeyserLocale;
 import org.geysermc.geyser.text.MinecraftLocale;
+import org.geysermc.geyser.text.SpriteGlyphs;
 import org.geysermc.geyser.translator.text.MessageTranslator;
 import org.geysermc.geyser.util.AssetUtils;
 import org.geysermc.geyser.util.CodeOfConductManager;
@@ -325,6 +326,16 @@ public class GeyserImpl implements GeyserApi, EventRegistrar {
 
         Registries.RESOURCE_PACKS.load();
         Registries.WAYPOINT_STYLE_MAPPINGS.load();
+
+        try {
+            int sprites = SpriteGlyphs.load(bootstrap.getConfigFolder());
+            if (sprites >= 0) {
+                logger.info("Loaded " + sprites + " sprite glyphs from " + SpriteGlyphs.FILE_NAME + ".");
+            }
+        } catch (Exception e) {
+            // A broken table only costs the icons, so it must not stop Geyser from starting.
+            logger.error("Could not load " + SpriteGlyphs.FILE_NAME + "; sprites will not be rendered.", e);
+        }
 
         // Warnings to users who enable options that they might not need.
         if (config.advanced().bedrock().useHaproxyProtocol()) {

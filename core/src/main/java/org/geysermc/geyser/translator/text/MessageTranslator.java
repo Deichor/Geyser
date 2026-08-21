@@ -33,6 +33,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
+import net.kyori.adventure.text.ObjectComponent;
 import net.kyori.adventure.text.TranslatableComponent;
 import net.kyori.adventure.text.TranslationArgument;
 import net.kyori.adventure.text.flattener.ComponentFlattener;
@@ -40,6 +41,8 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.Style;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.object.PlayerHeadObjectContents;
+import net.kyori.adventure.text.object.SpriteObjectContents;
 import net.kyori.adventure.text.renderer.TranslatableComponentRenderer;
 import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.CharacterAndFormat;
@@ -56,6 +59,7 @@ import org.geysermc.geyser.text.ChatDecoration;
 import org.geysermc.geyser.text.DummyLegacyHoverEventSerializer;
 import org.geysermc.geyser.text.GeyserLocale;
 import org.geysermc.geyser.text.MinecraftTranslationRegistry;
+import org.geysermc.geyser.text.SpriteGlyphs;
 import org.geysermc.mcprotocollib.protocol.data.DefaultComponentSerializer;
 import org.geysermc.mcprotocollib.protocol.data.game.Holder;
 import org.geysermc.mcprotocollib.protocol.data.game.chat.ChatType;
@@ -148,6 +152,19 @@ public class MessageTranslator {
                 if (lastIdx < translated.length()) {
                     consumer.accept(Component.text(translated.substring(lastIdx)));
                 }
+            })
+            // Bedrock cannot draw an atlas sprite inline, so one is only renderable as a glyph out of
+            // a resource pack. Adventure's own mapper would leave "[block/emerald_block]" behind,
+            // which reads worse than the icon being absent - so an unmapped object renders as nothing.
+            .mapper(ObjectComponent.class, object -> {
+                String glyph = null;
+                if (object.contents() instanceof SpriteObjectContents sprite) {
+                    glyph = SpriteGlyphs.glyph(sprite.atlas(), sprite.sprite());
+                } else if (object.contents() instanceof PlayerHeadObjectContents head) {
+                    // Only a head the pack was built with resolves; a live player's cannot.
+                    glyph = SpriteGlyphs.glyph(head);
+                }
+                return glyph != null ? glyph : "";
             })
             .build();
 
