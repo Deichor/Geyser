@@ -61,6 +61,7 @@ import org.geysermc.geyser.text.ChatDecoration;
 import org.geysermc.geyser.text.DummyLegacyHoverEventSerializer;
 import org.geysermc.geyser.text.GeyserLocale;
 import org.geysermc.geyser.text.MinecraftTranslationRegistry;
+import org.geysermc.geyser.text.ObjectPayloadTolerantSerializer;
 import org.geysermc.geyser.text.SpriteGlyphs;
 import org.geysermc.mcprotocollib.protocol.data.DefaultComponentSerializer;
 import org.geysermc.mcprotocollib.protocol.data.game.Holder;
@@ -93,8 +94,10 @@ public class MessageTranslator {
                 // fixes issues where legacy hover events throw deserialization errors
                 .legacyHoverEventSerializer(new DummyLegacyHoverEventSerializer())
                 .build();
-        // Tell MCProtocolLib to use this serializer, too.
-        DefaultComponentSerializer.set(GSON_SERIALIZER);
+        // Tell MCProtocolLib to use this serializer, too - wrapped, because a component arrives as
+        // NBT and the compound behind a custom click event reaches Adventure as an object where it
+        // wants a string, which throws mid-decode and costs the whole packet.
+        DefaultComponentSerializer.set(new ObjectPayloadTolerantSerializer(GSON_SERIALIZER));
 
         // Customize the formatting characters of our legacy serializer for bedrock edition
         List<CharacterAndFormat> formats = new ArrayList<>(CharacterAndFormat.defaults());
