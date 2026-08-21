@@ -24,7 +24,12 @@ different sprite list reshuffles them:
 | Output | Goes to |
 |---|---|
 | `font/glyph_XX.png` | the Bedrock resource pack the server sends |
+| `<name>.mcpack` (with `--mcpack <name>`) | Geyser's `packs/` folder, if you want the pages as a pack of their own |
 | `sprites.json` | the Geyser config folder |
+
+`--mcpack` derives the pack's version from the pages themselves. Bedrock caches a pack by
+uuid+version, so a regenerated pack under an unchanged version reaches no client that already holds
+the old one.
 
 Geyser reads `sprites.json` at startup (`SpriteGlyphs`) and `MessageTranslator` swaps each sprite for
 its glyph. With no file present, sprites render as nothing — the same as on a client without the

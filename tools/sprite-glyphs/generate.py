@@ -20,6 +20,7 @@ Vanilla occupies glyph pages E0, E1 and F9-FF, leaving E2-F8 - 23 pages of 256 c
 
 import argparse
 import base64
+import hashlib
 import io
 import json
 import math
@@ -28,6 +29,7 @@ import ssl
 import subprocess
 import sys
 import urllib.request
+import uuid
 import zipfile
 from collections import OrderedDict
 
@@ -156,6 +158,51 @@ def cells_for(image, cell):
     return max(1, math.ceil(image.width / image.height)) if image.height else 1
 
 
+# A stable identity for the pack, so a client updating it replaces the one it holds rather than
+# stacking a second copy. Fixed, because the pack is the same pack; only its version moves.
+PACK_UUID = "8f2b6c14-0d3a-4f77-9c21-6a5e1b0d4e33"
+MODULE_UUID = "c41d7e05-3b62-4a19-8f0e-27d9b4c6a1f8"
+
+
+def write_mcpack(out_dir, name, pages):
+    """A minimal Bedrock pack carrying nothing but the glyph pages.
+
+    The version is derived from the pages themselves. Bedrock caches a pack by uuid+version, so a
+    regenerated pack under an unchanged version reaches no client that already holds the old one —
+    the same trap carbon-bedrock-ui hit when a composed pack kept a pinned identity.
+    """
+    digest = hashlib.sha256()
+    for page in pages:
+        digest.update(open(os.path.join(out_dir, "font", f"glyph_{page}.png"), "rb").read())
+    fingerprint = int(digest.hexdigest()[:6], 16)
+    version = [1, fingerprint // 1000, fingerprint % 1000]
+
+    manifest = {
+        "format_version": 2,
+        "header": {
+            "name": "Titan sprite glyphs",
+            "description": "Java atlas sprites as Bedrock font glyphs",
+            "uuid": PACK_UUID,
+            "version": version,
+            "min_engine_version": [1, 16, 0],
+        },
+        "modules": [{
+            "description": "Glyph pages",
+            "type": "resources",
+            "uuid": MODULE_UUID,
+            "version": version,
+        }],
+    }
+
+    path = os.path.join(out_dir, name + ".mcpack")
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as pack:
+        pack.writestr("manifest.json", json.dumps(manifest, indent=2))
+        for page in pages:
+            rel = f"font/glyph_{page}.png"
+            pack.write(os.path.join(out_dir, rel), rel)
+    print(f"{name}.mcpack  {os.path.getsize(path) // 1024} KB  version={version}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--client", help="vanilla Java client jar to take pixels from")
@@ -168,6 +215,8 @@ def main():
     parser.add_argument("--fallback-head", action="store_true",
                         help="add a Steve glyph that heads with no mapping of their own fall back to")
     parser.add_argument("--out", required=True, help="output directory")
+    parser.add_argument("--mcpack", metavar="NAME",
+                        help="also write NAME.mcpack (the glyph pages plus a manifest) next to sprites.json")
     parser.add_argument("--cell", type=int, default=32, help="cell size in px; page is 16x this (default 32)")
     parser.add_argument("--start-page", default="E2", help="first glyph page to fill (default E2)")
     args = parser.parse_args()
@@ -247,6 +296,9 @@ def main():
     with open(os.path.join(args.out, "sprites.json"), "w", encoding="utf-8") as handle:
         json.dump(mapping, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
+
+    if args.mcpack:
+        write_mcpack(args.out, args.mcpack, sorted(sheets))
 
     total = sum(len(v) for v in mapping.values())
     print(f"{total} sprites -> {len(sheets)} page(s) {sorted(sheets)} at {args.cell}px cells")
