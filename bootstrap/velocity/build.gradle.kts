@@ -22,7 +22,7 @@ dependencies {
     // reading half of it. So this proxy is deployed *before* the shards that announce, or their
     // contributions are dropped and the pack composes without them — silently, from the client's
     // point of view.
-    implementation("net.cubizor.carbon:carbon-bedrock-ui:9.3.0")
+    implementation("net.cubizor.carbon:carbon-bedrock-ui:9.3.2")
 
     // How a backend's contribution reaches this proxy. Provided by the ProxyBridge plugin, which is
     // where the transport actually lives — this only needs the message types.
