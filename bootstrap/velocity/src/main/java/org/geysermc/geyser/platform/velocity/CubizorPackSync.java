@@ -48,6 +48,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 /**
  * Composes the network's Bedrock pack here, out of what the backends announce, instead of taking a
@@ -76,8 +77,32 @@ public final class CubizorPackSync implements EventRegistrar {
      */
     private static final long SETTLE_DELAY_MILLIS = 3_000L;
 
+    /**
+     * How often to look for ProxyBridge, and for how long, before giving up on it.
+     *
+     * Geyser and ProxyBridge are two Velocity plugins with no load-order relationship, and on this
+     * network Geyser wins by about a second — so a single attempt at boot found nothing, logged a
+     * warning and returned, and the whole contribution route was dead for the life of the proxy. It
+     * was never noticed because nothing on any backend answered the request either; the moment one
+     * did, this became the thing standing in front of it.
+     *
+     * A minute is far longer than the gap actually is and costs nothing to wait: until the listener
+     * is registered the proxy simply serves the pack it composed last time.
+     */
+    private static final long ATTACH_RETRY_MILLIS = 2_000L;
+
+    private static final int ATTACH_ATTEMPTS = 30;
+
     private final Logger logger;
     private final PackSyncStore store;
+
+    /**
+     * How the bridge is found. A seam, so the one thing here that used to be untestable is not.
+     *
+     * The lookup is a static that throws until another plugin has enabled, which is exactly the
+     * shape a test cannot arrange and exactly the shape that shipped wrong.
+     */
+    private final Supplier<ProxyBridgeAPI> bridgeLookup;
     private final ScheduledExecutorService scheduler;
 
     private ScheduledFuture<?> pending;
@@ -94,9 +119,16 @@ public final class CubizorPackSync implements EventRegistrar {
 
     /** Visible for tests: composing and timing are what a test wants to drive itself. */
     CubizorPackSync(PackSyncStore store, Logger logger, ScheduledExecutorService scheduler) {
+        this(store, logger, scheduler, ProxyBridgeAPI.Companion::instance);
+    }
+
+    /** Visible for tests: and so is whether the bridge is there yet. */
+    CubizorPackSync(PackSyncStore store, Logger logger, ScheduledExecutorService scheduler,
+                    Supplier<ProxyBridgeAPI> bridgeLookup) {
         this.store = store;
         this.logger = logger;
         this.scheduler = scheduler;
+        this.bridgeLookup = bridgeLookup;
     }
 
     /** Stops the settle timer. Whatever was composed stays on disk and is served again next boot. */
@@ -121,16 +153,42 @@ public final class CubizorPackSync implements EventRegistrar {
     public void start(String proxyId) {
         reload();
         GeyserApi.api().eventBus().register(this, this);
+        attach(proxyId, 0);
+    }
 
-        // Everything past here needs ProxyBridge, and a proxy without it simply keeps serving what
-        // it composed before — which on a first run is nothing at all. Not fatal: a pack is not
-        // what makes Bedrock work, only what makes it ours.
+    /**
+     * Registers the listener and asks the network, once ProxyBridge exists to do it through.
+     *
+     * Retried rather than attempted once. Everything past the lookup needs ProxyBridge, and a proxy
+     * without it keeps serving what it composed before — which is a fine outcome for a proxy that
+     * genuinely has no bridge, and the wrong one entirely for a proxy whose bridge is four hundred
+     * milliseconds behind it.
+     *
+     * @param attempt how many times the lookup has already come up empty
+     */
+    void attach(String proxyId, int attempt) {
         ProxyBridgeAPI bridge;
         try {
-            bridge = ProxyBridgeAPI.Companion.instance();
+            bridge = bridgeLookup.get();
         } catch (IllegalStateException notReady) {
-            logger.warn("ProxyBridge is not up, so backends cannot announce their pack contributions");
+            if (attempt >= ATTACH_ATTEMPTS) {
+                logger.warn("ProxyBridge never came up, so backends cannot announce their pack contributions");
+                return;
+            }
+            if (attempt == 0) {
+                logger.info("ProxyBridge is not up yet; waiting for it before asking backends for their contributions");
+            }
+            try {
+                scheduler.schedule(() -> attach(proxyId, attempt + 1), ATTACH_RETRY_MILLIS, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException stopped) {
+                // The proxy is shutting down. Nothing to say: whatever was composed is on disk.
+            }
             return;
+        }
+
+        if (attempt > 0) {
+            logger.info("ProxyBridge came up after {}s; asking backends for their pack contributions",
+                    (attempt * ATTACH_RETRY_MILLIS) / 1000);
         }
 
         bridge.messageService().registerListener(new ProxyMessageListener<>(ResourcePackContributionMessage.Companion) {
