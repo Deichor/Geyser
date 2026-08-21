@@ -137,6 +137,14 @@ public class FormCache {
      */
     public int sendRawForm(String json, boolean update, Consumer<String> onResponse) {
         int formId = nextFormId();
+        if (update) {
+            // Whatever it replaced is off the screen and will never be answered, so it is dropped
+            // here rather than left for closeForms() to report as a form the player closed. That
+            // covers a Cumulus form too: a backend may well have opened the screen through Floodgate
+            // and only now be replacing its content.
+            forms.clear();
+            rawForms.clear();
+        }
         rawForms.put(formId, onResponse);
         if (update) {
             ServerSettingsResponsePacket packet = new ServerSettingsResponsePacket();

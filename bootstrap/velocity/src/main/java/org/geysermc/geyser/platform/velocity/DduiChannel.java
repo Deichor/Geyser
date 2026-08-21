@@ -213,7 +213,8 @@ public final class DduiChannel {
     private void form(GeyserSession session, UUID uuid, String ref, JsonObject request) {
         boolean update = request.has("update") && request.get("update").getAsBoolean();
         String payload = request.get("form").getAsString();
-        logger.info("DDUI -> form {} ({})", ref, update ? "update" : "open");
+        // Debug, not info: a screen that repaints on a timer sends one of these a second per player.
+        logger.debug("DDUI -> form {} ({})", ref, update ? "update" : "open");
         session.getFormCache().sendRawForm(payload, update, response -> reply(uuid, formResponse(ref, response)));
     }
 
