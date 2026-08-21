@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.JoinConfiguration;
 import net.kyori.adventure.text.ObjectComponent;
@@ -41,6 +42,7 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.Style;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.object.ObjectContents;
 import net.kyori.adventure.text.object.PlayerHeadObjectContents;
 import net.kyori.adventure.text.object.SpriteObjectContents;
 import net.kyori.adventure.text.renderer.TranslatableComponentRenderer;
@@ -629,6 +631,8 @@ public class MessageTranslator {
                         args.add(componentFromNbtTag(with, style));
                     }
                     component = Component.translatable(translateKey, fallback, args);
+                } else {
+                    component = objectComponentFromNbtMap(map);
                 }
             }
 
@@ -647,6 +651,65 @@ public class MessageTranslator {
 
         GeyserImpl.getInstance().getLogger().error("Expected tag to be a literal string, a list of components, or a component object with a text/translate key: " + nbtTag);
         return Component.empty();
+    }
+
+    /**
+     * An object component out of its NBT form, or null when the map is not one.
+     *
+     * <p>A component's type is inferred from the fields it carries rather than declared, so an
+     * object arrives as bare {@code sprite}/{@code atlas} or {@code player} keys with no marker to
+     * dispatch on. Without this an item name or a lore line carrying a sprite reaches no reader at
+     * all - it is the one path that does not go through the component tree the flattener sees.
+     */
+    private static @Nullable Component objectComponentFromNbtMap(NbtMap map) {
+        String sprite = map.getString("sprite", null);
+        if (sprite != null) {
+            String atlas = map.getString("atlas", null);
+            return Component.object(atlas != null
+                ? ObjectContents.sprite(Key.key(atlas), Key.key(sprite))
+                : ObjectContents.sprite(Key.key(sprite)));
+        }
+
+        Object player = map.get("player");
+        String texture = map.getString("texture", null);
+        if (player == null && texture == null) {
+            return null;
+        }
+
+        PlayerHeadObjectContents.Builder head = ObjectContents.playerHead()
+            .hat(map.getBoolean("hat", PlayerHeadObjectContents.DEFAULT_HAT));
+        if (texture != null) {
+            head.texture(Key.key(texture));
+        }
+        if (player instanceof String name) {
+            head.name(name);
+        } else if (player instanceof NbtMap profile) {
+            applyProfile(head, profile);
+        }
+        return Component.object(head.build());
+    }
+
+    private static void applyProfile(PlayerHeadObjectContents.Builder head, NbtMap profile) {
+        String name = profile.getString("name", null);
+        if (name != null) {
+            head.name(name);
+        }
+
+        // The properties carry the base64 the skin is behind, which is the only half of a profile
+        // that can be matched against a glyph the pack was built with.
+        Object properties = profile.get("properties");
+        if (properties instanceof List<?> list) {
+            for (Object entry : list) {
+                if (!(entry instanceof NbtMap property)) {
+                    continue;
+                }
+                String propertyName = property.getString("name", null);
+                String value = property.getString("value", null);
+                if (propertyName != null && value != null) {
+                    head.profileProperty(PlayerHeadObjectContents.property(propertyName, value));
+                }
+            }
+        }
     }
 
     private static List<Component> componentsFromNbtList(List<?> list, Style style) {

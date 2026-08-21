@@ -34,10 +34,13 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Base64;
+import java.util.List;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.object.ObjectContents;
 import net.kyori.adventure.text.object.PlayerHeadObjectContents;
+import org.cloudburstmc.nbt.NbtMap;
+import org.cloudburstmc.nbt.NbtType;
 import org.geysermc.geyser.translator.text.MessageTranslator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -172,6 +175,50 @@ public class SpriteGlyphsTest {
             MessageTranslator.convertMessageRaw(Component.text("b: ").append(head(profile("deadbeef"))), "en_US"));
         assertEquals("c: \uF1FF", MessageTranslator.convertMessageRaw(Component.text("c: ")
             .append(Component.object(ObjectContents.playerHead().name("Tim203").build())), "en_US"));
+    }
+
+    @Test
+    void readsASpriteOutOfItsNbtForm() {
+        SpriteGlyphs.load(new StringReader("{ \"minecraft:items\": { \"item/gold_ingot\": \"\\uE201\" } }"));
+
+        // How an item name or a lore line carries a sprite: no type marker, just the fields.
+        NbtMap tag = NbtMap.builder()
+            .putString("atlas", "minecraft:items")
+            .putString("sprite", "minecraft:item/gold_ingot")
+            .putString("color", "white")
+            .build();
+
+        // The colour the tag carries survives as a legacy code in front of the glyph.
+        assertEquals("\u00a7f\uE201", MessageTranslator.convertMessageRaw(
+            MessageTranslator.componentFromNbtTag(tag), "en_US"));
+    }
+
+    @Test
+    void defaultsTheAtlasWhenNbtOmitsIt() {
+        SpriteGlyphs.load(new StringReader("{ \"minecraft:blocks\": { \"block/emerald_block\": \"\\uE200\" } }"));
+
+        NbtMap tag = NbtMap.builder().putString("sprite", "minecraft:block/emerald_block").build();
+
+        assertEquals("\uE200", MessageTranslator.convertMessageRaw(
+            MessageTranslator.componentFromNbtTag(tag), "en_US"));
+    }
+
+    @Test
+    void readsAHeadOutOfItsNbtForm() {
+        SpriteGlyphs.load(new StringReader(
+            "{ \"minecraft:player_head\": { \"" + RED_X_HASH + "\": \"\\uF1D2\" } }"));
+
+        NbtMap tag = NbtMap.builder()
+            .putCompound("player", NbtMap.builder()
+                .putList("properties", NbtType.COMPOUND, List.of(NbtMap.builder()
+                    .putString("name", "textures")
+                    .putString("value", RED_X_PROFILE)
+                    .build()))
+                .build())
+            .build();
+
+        assertEquals("\uF1D2", MessageTranslator.convertMessageRaw(
+            MessageTranslator.componentFromNbtTag(tag), "en_US"));
     }
 
     @Test
