@@ -156,10 +156,10 @@ def load_requested(args):
 def art_size(image, cell, ratio):
     """The pixel size the art is drawn at inside the glyph box, preserving aspect.
 
-    Not the whole cell: Bedrock scales a cell to the line height, so art that fills its cell renders
-    taller than the text beside it, and with nothing left over on the right consecutive glyphs run
-    into each other. Vanilla's own emoji sit at roughly three quarters of their cell with a right
-    margin, which is what [ratio] reproduces.
+    Not the whole cell. A glyph is drawn at the size it occupies in the page, so art that fills its
+    cell renders taller than the text beside it and, with nothing left on the right, runs into the
+    glyph after it. Vanilla's letters sit at about half a 16px cell and its emoji at three quarters;
+    [ratio] is which of those to match.
     """
     height = max(1, round(cell * ratio))
     width = max(1, round(image.width * height / image.height)) if image.height else height
@@ -231,10 +231,13 @@ def main():
     parser.add_argument("--out", required=True, help="output directory")
     parser.add_argument("--mcpack", metavar="NAME",
                         help="also write NAME.mcpack (the glyph pages plus a manifest) next to sprites.json")
-    parser.add_argument("--cell", type=int, default=32, help="cell size in px; page is 16x this (default 32)")
-    parser.add_argument("--art-ratio", type=float, default=0.75,
-                        help="fraction of the cell the art fills, leaving the margin that keeps "
-                             "glyphs apart (default 0.75, matching vanilla's emoji)")
+    # Cell size is not resolution alone: a 16px cell (a 256x256 page) is the box one text character
+    # occupies, and doubling it doubles how big the glyph is drawn. Raise it for detail only
+    # alongside a matching drop in --art-ratio, or the art simply gets bigger.
+    parser.add_argument("--cell", type=int, default=16, help="cell size in px; page is 16x this (default 16)")
+    parser.add_argument("--art-ratio", type=float, default=0.5,
+                        help="fraction of the cell the art fills - this is what governs how big a "
+                             "glyph looks (default 0.5, matching the height of a capital letter)")
     parser.add_argument("--start-page", default="E2", help="first glyph page to fill (default E2)")
     args = parser.parse_args()
 
