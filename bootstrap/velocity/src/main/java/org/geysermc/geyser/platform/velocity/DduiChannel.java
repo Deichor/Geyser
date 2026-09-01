@@ -122,6 +122,11 @@ public final class DduiChannel {
                     case "close" -> close(uuid, ref);
                     case "form" -> form(session, uuid, ref, request);
                     case "toast" -> toast(session, request);
+                    // Answers which ops this build knows. `ping` cannot do that job: it predates
+                    // every op added since, so a proxy without `toast` answers a pong just as
+                    // readily and a backend that took that for support would send toasts into a
+                    // default branch that drops them.
+                    case "capabilities" -> reply(uuid, capabilities(ref));
                     // Answers so a backend can find out this proxy speaks the channel at all. A
                     // plugin message to a channel nobody registered is dropped without a word, so
                     // without an answer a server cannot tell a proxy that ignored a form from one
@@ -256,6 +261,21 @@ public final class DduiChannel {
         }
         return MessageTranslator.convertMessageLenient(value.getAsString(), session.locale());
     }
+
+    /** The ops this build dispatches, for a backend deciding what it may rely on. */
+    private static JsonObject capabilities(String ref) {
+        JsonObject message = reply("capabilities", ref);
+        JsonArray ops = new JsonArray();
+        for (String op : KNOWN_OPS) {
+            ops.add(op);
+        }
+        message.add("ops", ops);
+        return message;
+    }
+
+    /** Kept next to the switch above; an op added there and not here is one nobody will use. */
+    private static final List<String> KNOWN_OPS =
+            List.of("open", "set", "refresh", "close", "form", "toast", "ping", "capabilities");
 
     private void close(UUID uuid, String ref) {
         ScreenSession screen = open.get(key(uuid, ref));
