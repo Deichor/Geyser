@@ -36,10 +36,12 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
+import org.cloudburstmc.protocol.bedrock.packet.ToastRequestPacket;
 import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.ddui.DduiScreens;
 import org.geysermc.geyser.ddui.ScreenSession;
 import org.geysermc.geyser.session.GeyserSession;
+import org.geysermc.geyser.translator.text.MessageTranslator;
 import org.slf4j.Logger;
 
 import java.math.BigDecimal;
@@ -119,6 +121,7 @@ public final class DduiChannel {
                     case "refresh" -> refresh(uuid, ref);
                     case "close" -> close(uuid, ref);
                     case "form" -> form(session, uuid, ref, request);
+                    case "toast" -> toast(session, request);
                     // Answers so a backend can find out this proxy speaks the channel at all. A
                     // plugin message to a channel nobody registered is dropped without a word, so
                     // without an answer a server cannot tell a proxy that ignored a form from one
@@ -216,6 +219,42 @@ public final class DduiChannel {
         // Debug, not info: a screen that repaints on a timer sends one of these a second per player.
         logger.debug("DDUI -> form {} ({})", ref, update ? "update" : "open");
         session.getFormCache().sendRawForm(payload, update, response -> reply(uuid, formResponse(ref, response)));
+    }
+
+    /**
+     * Shows a toast: the grey bar that drops out of the top of the screen and retracts.
+     *
+     * <p>Not a screen, so it opens nothing and there is nothing to close, answer or key by ref - the
+     * ref rides along because every op on this channel carries one, and is ignored here.
+     *
+     * <p>The text arrives as a component rather than as a finished string, and is converted here.
+     * That is the whole reason this op exists on the proxy instead of the backend building the
+     * string itself: a network palette is hex, Bedrock has no hex, and only {@link MessageTranslator}
+     * knows how to downsample one - and which formats to drop, strikethrough being absent on Bedrock
+     * entirely. A backend that serialised its own string would ship the escape sequences as text.
+     *
+     * <p>Two single-line labels is all the vanilla screen holds, so a long line is clipped by the
+     * client rather than wrapped. Deciding what fits belongs to whoever writes the message.
+     */
+    private void toast(GeyserSession session, JsonObject request) {
+        ToastRequestPacket packet = new ToastRequestPacket();
+        packet.setTitle(text(session, request, "title"));
+        packet.setContent(text(session, request, "content"));
+        session.sendUpstreamPacket(packet);
+    }
+
+    /**
+     * One field of a toast, as Bedrock wants it.
+     *
+     * <p>Lenient because the backend may send either a JSON component or a legacy string, and a
+     * toast is not worth failing an op over: an absent field is an empty line, not an error.
+     */
+    private static String text(GeyserSession session, JsonObject request, String field) {
+        JsonElement value = request.get(field);
+        if (value == null || value.isJsonNull()) {
+            return "";
+        }
+        return MessageTranslator.convertMessageLenient(value.getAsString(), session.locale());
     }
 
     private void close(UUID uuid, String ref) {
