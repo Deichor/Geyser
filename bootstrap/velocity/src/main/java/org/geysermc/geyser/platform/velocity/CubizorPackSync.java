@@ -28,6 +28,7 @@ package org.geysermc.geyser.platform.velocity;
 import net.cubizor.carbon.bedrock.ui.cubizor.CubizorBedrockPack;
 import net.cubizor.carbon.bedrock.ui.pack.PackContribution;
 import net.cubizor.carbon.bedrock.ui.pack.PackContributionCodec;
+import net.cubizor.carbon.bedrock.ui.pack.PackEntities;
 import net.cubizor.carbon.bedrock.ui.pack.PackSyncStore;
 import net.cubizor.proxybridge.api.ProxyBridgeAPI;
 import net.cubizor.proxybridge.api.message.ResourcePackContributionMessage;
@@ -38,11 +39,16 @@ import org.geysermc.geyser.api.event.bedrock.SessionLoadResourcePacksEvent;
 import org.geysermc.geyser.api.pack.PackCodec;
 import org.geysermc.geyser.api.pack.ResourcePack;
 import org.geysermc.geyser.api.pack.option.ResourcePackOption;
+import org.geysermc.geyser.api.util.Identifier;
+import org.geysermc.geyser.util.EntityUtils;
 import org.geysermc.event.subscribe.Subscribe;
+import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.api.GeyserApi;
 import org.slf4j.Logger;
 
+import java.io.File;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
@@ -108,6 +114,14 @@ public final class CubizorPackSync implements EventRegistrar {
     private ScheduledFuture<?> pending;
     private ResourcePack served;
 
+    /**
+     * What claims an entity as a backend's own, or null on a proxy that draws none.
+     *
+     * It lives here only to be handed the bridge: waiting for ProxyBridge is this class's retry
+     * loop, and a second one beside it would be the same wait written twice.
+     */
+    private CubizorEntityBinding binding;
+
     public CubizorPackSync(Path configFolder, Logger logger) {
         this(CubizorBedrockPack.syncStore(configFolder.resolve("pack")), logger,
                 Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -150,7 +164,18 @@ public final class CubizorPackSync implements EventRegistrar {
      *
      * @param proxyId what to call this proxy when asking, so a backend can say who it answered
      */
-    public void start(String proxyId) {
+    public void start(String proxyId, CubizorEntityBinding binding) {
+        // The kill switch. Bedrock menu latency has no way to be attributed without it: the pack is
+        // the only difference between our screens and Mojang's, and "is the pack what costs the two
+        // seconds" cannot be answered by reading anything on the server. With this on, contributions
+        // are ignored, nothing is composed, and every form falls back to the client's own dialog —
+        // which is the measurement, not a feature.
+        if (Boolean.getBoolean("cubizor.pack.disabled")) {
+            GeyserImpl.getInstance().getLogger().warning(
+                    "cubizor.pack.disabled is set: serving no Bedrock pack. Every form gets Mojang's own dialog.");
+            return;
+        }
+        this.binding = binding;
         reload();
         GeyserApi.api().eventBus().register(this, this);
         attach(proxyId, 0);
@@ -189,6 +214,10 @@ public final class CubizorPackSync implements EventRegistrar {
         if (attempt > 0) {
             logger.info("ProxyBridge came up after {}s; asking backends for their pack contributions",
                     (attempt * ATTACH_RETRY_MILLIS) / 1000);
+        }
+
+        if (binding != null) {
+            binding.attach(bridge.messageService(), proxyId);
         }
 
         bridge.messageService().registerListener(new ProxyMessageListener<>(ResourcePackContributionMessage.Companion) {
@@ -273,7 +302,21 @@ public final class CubizorPackSync implements EventRegistrar {
                 updated.getServed().getVersion(), store.contributors(), updated.getSha256());
     }
 
-    /** Reads whatever is on disk into the pack handed to connecting clients. */
+    /**
+     * Reads whatever is on disk into the pack handed to connecting clients, and registers the
+     * custom entities that pack defines.
+     *
+     * <p>The two belong together, and this is the one place both are known: a pack is served either
+     * because it was just composed or because it is what the last run left behind, and either way
+     * the entities inside it have to be registered before a client can be shown one.
+     *
+     * <p>After load rather than before it, and that is not a preference. This proxy's disk does not
+     * survive the pod being replaced, so a fresh one has no earlier pack to read — an entity read
+     * before {@code GeyserImpl.load} would be read out of nothing, every time, and would simply
+     * never register with nothing in any log to say so. {@link EntityUtils#registerCustomEntities}
+     * is what makes the later moment work: a joining session reads the identifier registry, so what
+     * matters is that an entity is in it before that player arrives, not before Geyser booted.
+     */
     private void reload() {
         PackSyncStore.Served current = store.served();
         if (current == null) {
@@ -283,7 +326,26 @@ public final class CubizorPackSync implements EventRegistrar {
             served = ResourcePack.create(PackCodec.path(current.getFile().toPath()));
         } catch (RuntimeException failure) {
             logger.error("Geyser refused the composed Bedrock pack", failure);
+            return;
         }
+        registerEntities(current.getFile());
+    }
+
+    /** Names the custom entities the served pack defines. Handing over the same ones twice is safe. */
+    private void registerEntities(File pack) {
+        Set<String> identifiers;
+        try {
+            identifiers = PackEntities.identifiersIn(pack);
+        } catch (RuntimeException failure) {
+            logger.warn("Could not read the custom entities out of the composed Bedrock pack", failure);
+            return;
+        }
+        if (identifiers.isEmpty()) {
+            return;
+        }
+
+        EntityUtils.registerCustomEntities(identifiers.stream().map(Identifier::of).toList());
+        logger.info("The composed Bedrock pack defines {} custom entities: {}", identifiers.size(), identifiers);
     }
 
     /**

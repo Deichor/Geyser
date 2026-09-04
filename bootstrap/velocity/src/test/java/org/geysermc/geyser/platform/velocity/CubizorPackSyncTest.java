@@ -148,7 +148,7 @@ class CubizorPackSyncTest {
         // Derived, not written out: a marker picked by hand is refused where it is built, because
         // derived ones are all one length and so cannot contain one another.
         var marker = ScreenMarkers.INSTANCE.of("shop", "board");
-        var screen = new FormScreen(marker, 520, 312, "shop.board_body", null, null, null, null, null);
+        var screen = new FormScreen(marker, 520, 312, "shop.board_body", null, null, null, null, null, FormScreen.Kind.BUTTONS);
         var contribution = new PackContribution() {
             @Override
             public String getNamespace() {
@@ -177,7 +177,13 @@ class CubizorPackSyncTest {
 
         // One more variant than the pack's own screens, and Mojang's gate widened to name the new
         // marker — a gate that misses one draws Mojang's dialog underneath ours.
-        assertEquals(5, variants.getItems().size());
+        //
+        // Counted off an empty contribution rather than written down: how many screens Carbon
+        // itself ships is Carbon's business and it changes between releases, so a literal here
+        // fails on the next bump for a reason that has nothing to do with what this test is about.
+        var own = ((net.cubizor.carbon.bedrock.ui.JsonArray)
+                ((JsonObject) CubizorBedrockPack.serverForm(List.of()).get("long_form")).get("controls"));
+        assertEquals(own.getItems().size() + 1, variants.getItems().size());
         assertTrue(form.toString().contains(screen.getMarker()));
     }
 

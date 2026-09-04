@@ -79,6 +79,7 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
     private CommandRegistry commandRegistry;
     private GeyserImpl geyser;
     private CubizorPackSync packSync;
+    private CubizorEntityBinding entityBinding;
     private boolean started = false;
 
     @Getter
@@ -232,8 +233,11 @@ public class GeyserVelocityPlugin implements GeyserBootstrap {
         // initialized because it registers for a Geyser event, and its own first act is to serve
         // whatever it composed last time — so a restart is invisible to a client unless something
         // actually changed.
+        this.entityBinding = new CubizorEntityBinding(logger, proxyServer);
+        this.entityBinding.start();
+
         this.packSync = new CubizorPackSync(configFolder, logger);
-        this.packSync.start(proxyServer.getBoundAddress().toString());
+        this.packSync.start(proxyServer.getBoundAddress().toString(), this.entityBinding);
     }
 
     @Subscribe

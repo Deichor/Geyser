@@ -31,6 +31,7 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.cloudburstmc.math.vector.Vector3f;
 import org.cloudburstmc.nbt.NbtMap;
 import org.cloudburstmc.protocol.bedrock.data.entity.EntityDataTypes;
+import org.geysermc.geyser.entity.CustomBedrockEntityDefinition;
 import org.geysermc.geyser.entity.VanillaEntities;
 import org.geysermc.geyser.entity.spawn.EntitySpawnContext;
 import org.geysermc.geyser.entity.type.living.ArmorStandEntity;
@@ -64,9 +65,26 @@ public class TextDisplayEntity extends DisplayBaseEntity {
         super(context);
     }
 
+    /**
+     * Whether something has substituted a custom Bedrock entity for this text display.
+     *
+     * <p>When it has, none of the nametag machinery below applies. A text display is normally drawn
+     * as an invisible armor stand scaled to nothing with a second armor stand carrying the text as
+     * a nametag — which is the whole reason a "fixed" hologram still turns to face its reader, since
+     * a Bedrock nametag always does. Something that replaced the definition has real geometry to
+     * draw instead, and both halves of the nametag trick would ruin it: the scale of zero shrinks
+     * that geometry to nothing, and the second armor stand goes on swivelling beside it.
+     */
+    private boolean drawnAsCustomEntity() {
+        return definition() instanceof CustomBedrockEntityDefinition;
+    }
+
     @Override
     protected void initializeMetadata() {
         super.initializeMetadata();
+        if (drawnAsCustomEntity()) {
+            return;
+        }
         // Remove armor stand body / hitbox
         this.metadata.put(EntityDataTypes.HITBOX, NbtMap.EMPTY);
         this.metadata.put(EntityDataTypes.SCALE, 0f);
@@ -128,6 +146,17 @@ public class TextDisplayEntity extends DisplayBaseEntity {
     }
 
     public void setText(EntityMetadata<Component, ?> entityMetadata) {
+        if (drawnAsCustomEntity()) {
+            // Neither half of this applies to something with real geometry. The name would be drawn
+            // as a Bedrock nametag over the model — the very text the model exists to replace, back
+            // on top of it and turning to face the reader again — and it would be redrawn on every
+            // text update, which reads as the picture flickering between itself and the words.
+            //
+            // The offset below is the other half: it exists only to lift the invisible armor stand
+            // so that its nametag lands where the Java text sat, so on a model it lifts the model
+            // instead, by a line height for every line. A tall panel ends up metres above its wall.
+            return;
+        }
         this.metadata.put(EntityDataTypes.NAME, MessageTranslator.convertMessage(entityMetadata.getValue(), session.locale()));
         int oldLineCount = this.lineCount;
         this.lineCount = calculateLineCount(entityMetadata.getValue());
@@ -161,7 +190,7 @@ public class TextDisplayEntity extends DisplayBaseEntity {
 
     public void updateNameTag() {
         // Text displays are special: customNameVisible must be set for the custom name to ever show
-        if (this.nametag.isBlank() || isInvisible || !customNameVisible) {
+        if (drawnAsCustomEntity() || this.nametag.isBlank() || isInvisible || !customNameVisible) {
             if (secondEntity != null) {
                 secondEntity.despawnEntity();
                 secondEntity = null;

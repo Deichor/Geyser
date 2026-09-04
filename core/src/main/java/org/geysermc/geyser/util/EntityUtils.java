@@ -377,10 +377,72 @@ public final class EntityUtils {
         return null;
     }
 
+    /**
+     * Registers custom entities whenever their identifiers become known — at load, or long after.
+     *
+     * {@link GeyserDefineEntitiesEvent} is not the only window there is. A session reads
+     * {@code BEDROCK_ENTITY_IDENTIFIERS} as it sends its registry definitions, so what a client is
+     * told about is whatever is in there by the time that player joins — not by the time Geyser
+     * booted. Anything that learns its entities from the network can therefore say so when it does.
+     *
+     * That is the difference between working and not where the pack is composed rather than
+     * shipped: its parts come from backends, which cannot answer until this proxy is already up, so
+     * no entity of theirs is knowable before load. A proxy whose disk survives could serve the
+     * previous run's pack and let a restart catch up; one on an empty disk never would, and the
+     * entities would simply never register, with nothing in any log to say so.
+     *
+     * Identifiers already registered are skipped rather than refused, so a caller may hand over
+     * everything it knows every time it learns anything.
+     */
+    public static synchronized void registerCustomEntities(Collection<Identifier> identifiers) {
+        List<CustomBedrockEntityDefinition> added = new ArrayList<>();
+        for (Identifier identifier : identifiers) {
+            CustomEntityDefinition definition = CustomEntityDefinition.of(identifier);
+            if (definition.registered() || !(definition instanceof CustomBedrockEntityDefinition bedrock)) {
+                continue;
+            }
+            Registries.BEDROCK_ENTITY_DEFINITIONS.register(bedrock.identifier(), bedrock);
+            added.add(bedrock);
+        }
+        announceCustomEntities(added);
+    }
+
+    /**
+     * Puts custom entities into the identifier list a joining client is sent.
+     *
+     * The other half of registering one and useless apart from it: a definition the client was
+     * never told about draws as nothing at all, and says nothing about it.
+     */
+    private static synchronized void announceCustomEntities(List<CustomBedrockEntityDefinition> customEntities) {
+        if (customEntities.isEmpty()) {
+            return;
+        }
+
+        NbtMap nbt = Registries.BEDROCK_ENTITY_IDENTIFIERS.get();
+        List<NbtMap> idlist = new ArrayList<>(nbt.getList("idlist", NbtType.COMPOUND));
+
+        for (BedrockEntityDefinition definition : customEntities) {
+            idlist.add(NbtMap.builder()
+                .putBoolean("hasSpawnEgg", false)
+                .putString("id", definition.identifier().toString())
+                .putBoolean("summonable", true)
+                .putString("bid", "")
+                .putInt("rid", RUNTIME_ID_ALLOCATOR.getAndIncrement())
+                .putBoolean("experimental", false)
+                .build());
+            GeyserImpl.getInstance().getLogger().debug("Registered custom entity " + definition.identifier());
+        }
+
+        Registries.BEDROCK_ENTITY_IDENTIFIERS.set(nbt.toBuilder()
+            .putList("idlist", NbtType.COMPOUND, idlist)
+            .build());
+        GeyserImpl.getInstance().getLogger().info("Registered " + customEntities.size() + " custom entities");
+    }
+
     public static void callEntityEvents() {
         // entities would be initialized before these events are called
         List<CustomBedrockEntityDefinition> customEntities = new ArrayList<>();
-        GeyserImpl.getInstance().getEventBus().fire(new GeyserDefineEntitiesEvent() {
+        GeyserDefineEntitiesEvent event = new GeyserDefineEntitiesEvent() {
 
             @Override
             public @NonNull Collection<GeyserEntityDefinition> entities() {
@@ -404,33 +466,11 @@ public final class EntityUtils {
                 Registries.BEDROCK_ENTITY_DEFINITIONS.register(bedrockEntityDefinition.identifier(), bedrockEntityDefinition);
                 customEntities.add(bedrockEntityDefinition);
             }
-        });
+        };
 
-        if (!customEntities.isEmpty()) {
-            NbtMap nbt = Registries.BEDROCK_ENTITY_IDENTIFIERS.get();
-            List<NbtMap> idlist = new ArrayList<>(nbt.getList("idlist", NbtType.COMPOUND));
+        GeyserImpl.getInstance().getEventBus().fire(event);
 
-            for (BedrockEntityDefinition definition : customEntities) {
-                idlist.add(NbtMap.builder()
-                    .putBoolean("hasSpawnEgg", false)
-                    .putString("id", definition.identifier().toString())
-                    .putBoolean("summonable", true)
-                    .putString("bid", "")
-                    .putInt("rid", RUNTIME_ID_ALLOCATOR.getAndIncrement())
-                    .putBoolean("experimental", false)
-                    .build());
-                GeyserImpl.getInstance().getLogger().debug("Registered custom entity " + definition.identifier());
-            }
-
-            NbtMap newIdentifiers = nbt.toBuilder()
-                .putList("idlist", NbtType.COMPOUND, idlist)
-                .build();
-
-            Registries.BEDROCK_ENTITY_IDENTIFIERS.set(newIdentifiers);
-            if (!customEntities.isEmpty()) {
-                GeyserImpl.getInstance().getLogger().info("Registered " + customEntities.size() + " custom entities");
-            }
-        }
+        announceCustomEntities(customEntities);
 
         GeyserImpl.getInstance().getEventBus().fire(new GeyserDefineEntityPropertiesEvent() {
             @Override

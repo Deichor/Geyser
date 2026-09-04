@@ -1,3 +1,14 @@
+/**
+ * The two Titan libraries this proxy links against, and how to point either at a local build.
+ *
+ * `-PlocalCarbon=10.3.7 -PlocalProxyBridge=4.9.0` after a `publishToMavenLocal` in those repos, which
+ * is what makes a change spanning all three testable before any of it is released. Without the
+ * property the released version is used and `mavenLocal` is not even on the repository list — see
+ * `geyser.base-conventions`, where leaving it off by default is deliberate.
+ */
+val carbonVersion: String = providers.gradleProperty("localCarbon").orNull ?: "10.5.0"
+val proxyBridgeVersion: String = providers.gradleProperty("localProxyBridge").orNull ?: "4.11.0"
+
 plugins {
     id("geyser.platform-conventions")
     id("geyser.modrinth-uploading-conventions")
@@ -22,11 +33,11 @@ dependencies {
     // reading half of it. So this proxy is deployed *before* the shards that announce, or their
     // contributions are dropped and the pack composes without them — silently, from the client's
     // point of view.
-    implementation("net.cubizor.carbon:carbon-bedrock-ui:10.0.2")
+    implementation("net.cubizor.carbon:carbon-bedrock-ui:$carbonVersion")
 
     // How a backend's contribution reaches this proxy. Provided by the ProxyBridge plugin, which is
     // where the transport actually lives — this only needs the message types.
-    compileOnly("net.cubizor.proxybridge:api:4.2.0")
+    compileOnly("net.cubizor.proxybridge:api:$proxyBridgeVersion")
 
     // Provided by the Titan Velocity fork, which ships the Kotlin runtime in the proxy jar and does
     // not relocate it. Shading a second copy here would be 1.7MB of duplicate classes.
@@ -37,7 +48,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlin:kotlin-stdlib:2.4.0")
     // compileOnly in main because the proxy provides them; a test has no proxy to provide them.
-    testImplementation("net.cubizor.proxybridge:api:4.2.0")
+    testImplementation("net.cubizor.proxybridge:api:$proxyBridgeVersion")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
