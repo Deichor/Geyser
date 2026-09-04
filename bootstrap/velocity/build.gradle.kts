@@ -6,7 +6,7 @@
  * property the released version is used and `mavenLocal` is not even on the repository list — see
  * `geyser.base-conventions`, where leaving it off by default is deliberate.
  */
-val carbonVersion: String = providers.gradleProperty("localCarbon").orNull ?: "10.5.0"
+val carbonVersion: String = providers.gradleProperty("localCarbon").orNull ?: "10.6.0"
 val proxyBridgeVersion: String = providers.gradleProperty("localProxyBridge").orNull ?: "4.11.0"
 
 plugins {
