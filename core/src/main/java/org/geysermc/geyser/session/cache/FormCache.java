@@ -35,7 +35,9 @@ import org.cloudburstmc.protocol.bedrock.packet.ModalFormResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.ServerSettingsResponsePacket;
 import org.cloudburstmc.protocol.bedrock.packet.UpdateAttributesPacket;
 import org.geysermc.cumulus.form.Form;
+import org.geysermc.cumulus.component.ButtonComponent;
 import org.geysermc.cumulus.form.SimpleForm;
+import org.geysermc.cumulus.util.FormImage;
 import org.geysermc.cumulus.form.impl.FormDefinitions;
 import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.entity.attribute.GeyserAttributeType;
@@ -59,6 +61,14 @@ public class FormCache {
     private final Int2ObjectMap<Form> forms = new Int2ObjectOpenHashMap<>();
     private final Int2ObjectMap<Consumer<String>> rawForms = new Int2ObjectOpenHashMap<>();
     private final GeyserSession session;
+
+    /**
+     * Whether to time forms: one line when a response arrives and one when the next form goes
+     * out, so the gap between them is the whole cost of the backend round trip as the proxy
+     * sees it. Separate from {@code debug-mode}, which on a busy network writes a line per tick
+     * and buries exactly this.
+     */
+    private static final boolean TIME_FORMS = Boolean.getBoolean("cubizor.form.timing");
 
     public boolean hasFormOpen() {
         // If forms is empty it implies that there are no forms to show
@@ -97,13 +107,13 @@ public class FormCache {
         formRequestPacket.setFormId(formId);
         formRequestPacket.setFormData(jsonData);
         session.sendUpstreamPacket(formRequestPacket);
-        if (GeyserImpl.getInstance().config().debugMode()) {
+        if (TIME_FORMS || GeyserImpl.getInstance().config().debugMode()) {
             GeyserImpl.getInstance().getLogger().info("FORM request id=" + formId
                     + " at=" + System.currentTimeMillis());
         }
 
         // Hack to fix the (url) image loading bug
-        if (form instanceof SimpleForm) {
+        if (form instanceof SimpleForm simpleForm && hasUrlImage(simpleForm)) {
             // Two delays:
             // First, 500ms, before we send the network stack latency packet
             session.scheduleInEventLoop(() -> session.sendNetworkLatencyStackPacket(MAGIC_FORM_IMAGE_HACK_TIMESTAMP, false, () -> {
@@ -137,6 +147,16 @@ public class FormCache {
      */
     public int sendRawForm(String json, boolean update, Consumer<String> onResponse) {
         int formId = nextFormId();
+        // A replacement is applied to a form the client already has; sent when it has none it lands
+        // on nothing and the player is left with no menu at all. The backend cannot see the client's
+        // screen and has to guess, so the guess is corrected here, where the answer is known.
+        if (update && !hasFormOpen()) {
+            if (GeyserImpl.getInstance().config().debugMode()) {
+                GeyserImpl.getInstance().getLogger().debug(
+                        "Asked to replace a form for " + session.bedrockUsername() + " with none open; opening instead");
+            }
+            update = false;
+        }
         if (update) {
             // Whatever it replaced is off the screen and will never be answered, so it is dropped
             // here rather than left for closeForms() to report as a form the player closed. That
@@ -146,6 +166,10 @@ public class FormCache {
             rawForms.clear();
         }
         rawForms.put(formId, onResponse);
+        if (TIME_FORMS || GeyserImpl.getInstance().config().debugMode()) {
+            GeyserImpl.getInstance().getLogger().info("FORM raw id=" + formId
+                    + (update ? " update" : " open") + " at=" + System.currentTimeMillis());
+        }
         if (update) {
             ServerSettingsResponsePacket packet = new ServerSettingsResponsePacket();
             packet.setFormId(formId);
@@ -158,6 +182,25 @@ public class FormCache {
             session.sendUpstreamPacket(packet);
         }
         return formId;
+    }
+
+    /**
+     * Whether any button on [form] carries an image the client has to fetch over HTTP.
+     *
+     * <p>The two timers below exist for exactly that case: a Bedrock client will not paint a URL
+     * image until something else on the connection nudges it. A form whose buttons all name a
+     * texture inside the resource pack has nothing to wait for, and putting a latency packet and an
+     * attribute update on the wire behind every one of those is two packets per menu that only
+     * disturb the client.
+     */
+    private static boolean hasUrlImage(SimpleForm form) {
+        for (ButtonComponent button : form.buttons()) {
+            FormImage image = button.image();
+            if (image != null && image.type() == FormImage.Type.URL) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -188,7 +231,7 @@ public class FormCache {
 
     public void handleResponse(ModalFormResponsePacket response) {
         session.formResponded();
-        if (GeyserImpl.getInstance().config().debugMode()) {
+        if (TIME_FORMS || GeyserImpl.getInstance().config().debugMode()) {
             GeyserImpl.getInstance().getLogger().info("FORM response id=" + response.getFormId()
                     + " at=" + System.currentTimeMillis());
         }
