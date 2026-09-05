@@ -80,6 +80,39 @@ public class ObjectPayloadTolerantSerializerTest {
         assertEquals("hello", plainText(TOLERANT.deserialize("{\"text\":\"hello\"}")));
     }
 
+    /**
+     * A rank badge as TAB draws it: a player head object whose {@code hat} came out of NBT, where a
+     * boolean is a byte. This is the shape that took the tab list down on prod-smp.
+     */
+    private static final String NUMERIC_HAT =
+        "{\"text\":\"\",\"extra\":[{\"type\":\"object\",\"player\":{\"name\":\"x\"},\"hat\":1}]}";
+
+    @Test
+    void adventureAloneCannotReadANumericHat() {
+        assertThrows(Exception.class, () -> PLAIN.deserializeFromTree(JsonParser.parseString(NUMERIC_HAT)));
+    }
+
+    @Test
+    void readsAPlayerHeadWhoseHatIsAByte() {
+        // Reading it at all is the point — unrepaired this throws and the packet carrying it is
+        // lost — but assert the head itself survived rather than just that nothing was raised.
+        assertEquals("[x head]", plainText(TOLERANT.deserializeFromTree(JsonParser.parseString(NUMERIC_HAT))));
+    }
+
+    @Test
+    void readsAZeroHatToo() {
+        String json = "{\"text\":\"a\",\"extra\":[{\"type\":\"object\",\"player\":{\"name\":\"x\"},\"hat\":0}]}";
+
+        assertEquals("a[x head]", plainText(TOLERANT.deserializeFromTree(JsonParser.parseString(json))));
+    }
+
+    @Test
+    void leavesAnActualBooleanHatAlone() {
+        String json = "{\"text\":\"a\",\"extra\":[{\"type\":\"object\",\"player\":{\"name\":\"x\"},\"hat\":true}]}";
+
+        assertEquals("a[x head]", plainText(TOLERANT.deserializeFromTree(JsonParser.parseString(json))));
+    }
+
     @Test
     void serialisingIsUntouched() {
         Component styled = Component.text("hello").append(Component.text(" there"));
