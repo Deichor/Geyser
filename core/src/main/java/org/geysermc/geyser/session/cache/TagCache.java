@@ -25,13 +25,23 @@
 
 package org.geysermc.geyser.session.cache;
 
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntLists;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
+import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.kyori.adventure.key.Key;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.GeyserLogger;
+import org.geysermc.geyser.level.block.type.Block;
+import org.geysermc.geyser.registry.BlockRegistries;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.session.cache.registry.JavaRegistries;
 import org.geysermc.geyser.session.cache.registry.JavaRegistryKey;
@@ -41,7 +51,10 @@ import org.geysermc.geyser.util.MinecraftKey;
 import org.geysermc.mcprotocollib.protocol.data.game.item.component.HolderSet;
 import org.geysermc.mcprotocollib.protocol.packet.common.clientbound.ClientboundUpdateTagsPacket;
 
+import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -65,6 +78,7 @@ import java.util.Map;
 public final class TagCache {
     private final GeyserSession session;
     private final Map<Tag<?>, IntList> tags = new Object2ObjectOpenHashMap<>();
+    private static Map<Key, IntList> fallbackBlockTags;
 
     public TagCache(GeyserSession session) {
         this.session = session;
@@ -169,7 +183,54 @@ public final class TagCache {
      * @return the network IDs in the given tag. This can be an empty array.
      */
     public @NonNull IntList getRaw(@NonNull Tag<?> tag) {
-        return this.tags.getOrDefault(tag, IntLists.emptyList());
+        IntList value = this.tags.get(tag);
+        if (value != null) {
+            return value;
+        }
+        // A 26.2 server does not sync mineable/* or incorrect_for_*_tool; a Java client reads them from
+        // its own jar, Geyser has no copy. Without them every tool rule misses and Bedrock players mine
+        // at bare-hand speed. A tag the server does send still wins.
+        if (tag.registry() == JavaRegistries.BLOCK) {
+            IntList fallback = fallbackBlockTags().get(tag.tag());
+            if (fallback != null) {
+                return fallback;
+            }
+        }
+        return IntLists.emptyList();
+    }
+
+    private static Map<Key, IntList> fallbackBlockTags() {
+        if (fallbackBlockTags == null) {
+            fallbackBlockTags = loadFallbackBlockTags();
+        }
+        return fallbackBlockTags;
+    }
+
+    private static Map<Key, IntList> loadFallbackBlockTags() {
+        Map<Key, IntList> loaded = new HashMap<>();
+        try (InputStream stream = GeyserImpl.getInstance().getBootstrap().getResourceOrThrow("titan/fallback_block_tags.json")) {
+            Object2IntMap<Key> ids = new Object2IntOpenHashMap<>();
+            ids.defaultReturnValue(-1);
+            for (Block block : BlockRegistries.JAVA_BLOCKS.get()) {
+                ids.put(block.javaIdentifier(), block.javaId());
+            }
+
+            JsonObject root = JsonParser.parseReader(new InputStreamReader(stream)).getAsJsonObject();
+            for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
+                JsonArray blocks = entry.getValue().getAsJsonArray();
+                IntArrayList list = new IntArrayList(blocks.size());
+                for (JsonElement element : blocks) {
+                    int id = ids.getInt(MinecraftKey.key(element.getAsString()));
+                    if (id != -1) {
+                        list.add(id);
+                    }
+                }
+                loaded.put(MinecraftKey.key(entry.getKey()), IntLists.unmodifiable(list));
+            }
+        } catch (Exception e) {
+            GeyserImpl.getInstance().getLogger().error("Unable to load the bundled block tag fallback", e);
+        }
+        return loaded;
     }
 
     /**
