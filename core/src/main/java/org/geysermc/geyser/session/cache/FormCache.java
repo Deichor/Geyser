@@ -195,6 +195,10 @@ public class FormCache {
      */
     private static boolean hasUrlImage(SimpleForm form) {
         for (ButtonComponent button : form.buttons()) {
+            // optionalButton(..., false) leaves a null placeholder in the list
+            if (button == null) {
+                continue;
+            }
             FormImage image = button.image();
             if (image != null && image.type() == FormImage.Type.URL) {
                 return true;
