@@ -32,15 +32,12 @@ import com.google.gson.JsonParser;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntLists;
-import it.unimi.dsi.fastutil.objects.Object2IntMap;
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import net.kyori.adventure.key.Key;
 import org.checkerframework.checker.nullness.qual.NonNull;
 import org.geysermc.geyser.GeyserImpl;
 import org.geysermc.geyser.GeyserLogger;
-import org.geysermc.geyser.level.block.type.Block;
-import org.geysermc.geyser.registry.BlockRegistries;
+import org.geysermc.geyser.registry.java.BuiltInJavaRegistries;
 import org.geysermc.geyser.registry.java.JavaRegistries;
 import org.geysermc.geyser.registry.java.JavaRegistryKey;
 import org.geysermc.geyser.session.GeyserSession;
@@ -151,21 +148,12 @@ public final class TagCache {
     private static Map<Key, IntList> loadFallbackBlockTags() {
         Map<Key, IntList> loaded = new HashMap<>();
         try (InputStream stream = GeyserImpl.getInstance().getBootstrap().getResourceOrThrow("titan/fallback_block_tags.json")) {
-            Object2IntMap<Key> ids = new Object2IntOpenHashMap<>();
-            ids.defaultReturnValue(-1);
-            for (Block block : BlockRegistries.JAVA_BLOCKS.get()) {
-                ids.put(block.javaIdentifier(), block.javaId());
-            }
-
             JsonObject root = JsonParser.parseReader(new InputStreamReader(stream)).getAsJsonObject();
             for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
                 JsonArray blocks = entry.getValue().getAsJsonArray();
                 IntArrayList list = new IntArrayList(blocks.size());
                 for (JsonElement element : blocks) {
-                    int id = ids.getInt(MinecraftKey.key(element.getAsString()));
-                    if (id != -1) {
-                        list.add(id);
-                    }
+                    BuiltInJavaRegistries.BLOCK.getId(MinecraftKey.key(element.getAsString())).ifPresent(list::add);
                 }
                 loaded.put(MinecraftKey.key(entry.getKey()), IntLists.unmodifiable(list));
             }

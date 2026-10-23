@@ -42,6 +42,7 @@ import org.geysermc.geyser.ddui.DduiScreens;
 import org.geysermc.geyser.ddui.ScreenSession;
 import org.geysermc.geyser.session.GeyserSession;
 import org.geysermc.geyser.translator.text.MessageTranslator;
+import org.geysermc.mcprotocollib.protocol.data.DefaultComponentSerializer;
 import org.slf4j.Logger;
 
 import java.math.BigDecimal;
@@ -259,7 +260,16 @@ public final class DduiChannel {
         if (value == null || value.isJsonNull()) {
             return "";
         }
-        return MessageTranslator.convertMessageLenient(value.getAsString(), session.locale());
+        String message = value.getAsString();
+        if (message.isBlank()) {
+            return message;
+        }
+        // Upstream dropped MessageTranslator#convertMessageLenient; same JSON-then-legacy order.
+        try {
+            return MessageTranslator.convertMessage(DefaultComponentSerializer.get().deserialize(message), session.locale());
+        } catch (RuntimeException ignored) {
+            return MessageTranslator.convertLegacyMessage(message, session.locale());
+        }
     }
 
     /** The ops this build dispatches, for a backend deciding what it may rely on. */
