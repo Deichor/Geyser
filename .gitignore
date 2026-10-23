@@ -262,3 +262,4 @@ locales/
 
 # sprite-glyphs skin download cache
 .skins/
+bootstrap/mod/gametest/src/main/generated/.cache
