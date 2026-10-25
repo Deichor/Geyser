@@ -27,9 +27,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CubizorNotifyLineWireTest {
 
     /** TitanUI NotifyWire.MARK, NotifyWire.TAP and NotifyKind.SALE.mark, pinned there too. */
-    private static final String MARK = "%tn%";
-    private static final String TAP = "%tn-tap%";
-    private static final String SALE = "%tn-sale%";
+    private static final String MARK = "|tn|";
+    private static final String TAP = "|tntap|";
+    private static final String SALE = "|tnsale|";
 
     private static final String LINE = MARK + SALE + TAP + "§lPAZAR§r\nElmas satıldı · +1.2k";
 
