@@ -148,7 +148,7 @@ class CubizorPackSyncTest {
         // Derived, not written out: a marker picked by hand is refused where it is built, because
         // derived ones are all one length and so cannot contain one another.
         var marker = ScreenMarkers.INSTANCE.of("shop", "board");
-        var screen = new FormScreen(marker, 520, 312, "shop.board_body", null, null, null, null, null, FormScreen.Kind.BUTTONS);
+        var screen = new FormScreen(marker, 520, 312, "shop.board_body", null, null, null, null, null, FormScreen.Kind.BUTTONS, false, 0);
         var contribution = new PackContribution() {
             @Override
             public String getNamespace() {
