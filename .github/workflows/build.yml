@@ -1,124 +1,90 @@
 name: Build
 
+# Titan fork, 2.11 line (what prod-smp runs): builds and tests only what ships (the Velocity jar).
+# Upstream's publish, preview and dispatch workflows target GeyserMC infrastructure and are removed.
+#
+# A tag `geyser-velocity-<version>` also publishes the jar to R2 as
+# releases/geyser-velocity-<version>.jar, which the Tessera operator registers on its own when a
+# pack pins that version. No hand upload to the cluster MinIO.
+
 on:
   workflow_dispatch:
   push:
     branches-ignore:
       - 'gh-readonly-queue/**'
+    tags:
+      - 'geyser-velocity-*'
     paths-ignore:
       - '.github/ISSUE_TEMPLATE/*.yml'
-      - '.github/workflows/build-remote.yml'
-      - '.github/workflows/preview.yml'
-      - '.github/workflows/pull-request.yml'
       - '.idea/copyright/*.xml'
       - '.gitignore'
       - 'CONTRIBUTING.md'
       - 'LICENSE'
-      - 'Jenkinsfile '
       - 'README.md'
+
+permissions:
+  contents: read
+  packages: read
 
 concurrency:
   group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Get Release Info
-        id: release-info
-        uses: GeyserMC/actions/previous-release@master
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          appID: ${{ secrets.RELEASE_APP_ID }}
-          appPrivateKey: ${{ secrets.RELEASE_APP_PK }}
+          # languages/ and mappings/ must be in the jar, or Geyser fails to start
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
 
       - name: Setup Gradle
-        uses: GeyserMC/actions/setup-gradle-composite@master
-        with:
-          setup-java_java-version: 25
+        uses: gradle/actions/setup-gradle@v5
 
-      - name: Build Geyser
-        run: ./gradlew build
+      - name: Build and test
+        # Indra turns strict versions on when CI is set, which compiles with a JDK 21 javac that
+        # cannot read Carbon's Java 25 classes. Off, javac 25 compiles with --release 21, as locally.
+        run: ./gradlew -PstrictMultireleaseVersions=false :core:test :ddui:test :velocity:build
         env:
-          BUILD_NUMBER: ${{ steps.release-info.outputs.curentRelease }}
-          
-      - name: Archive Artifacts
-        uses: GeyserMC/actions/upload-multi-artifact@master
-        if: success()
-        with:
-          artifacts: |
-            bootstrap/mod/fabric/build/libs/Geyser-Fabric.jar
-            bootstrap/mod/neoforge/build/libs/Geyser-NeoForge.jar
-            bootstrap/standalone/build/libs/Geyser-Standalone.jar
-            bootstrap/spigot/build/libs/Geyser-Spigot.jar
-            bootstrap/bungeecord/build/libs/Geyser-BungeeCord.jar
-            bootstrap/velocity/build/libs/Geyser-Velocity.jar
-            bootstrap/viaproxy/build/libs/Geyser-ViaProxy.jar
+          # carbon-bedrock-ui and proxybridge api come from GitHub Packages
+          GITHUB_ACTOR: ${{ github.actor }}
+          TITAN_PKG_READ_TOKEN: ${{ secrets.TITAN_PKG_READ_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Publish to Maven Repository
-        if: ${{ success() && github.repository == 'GeyserMC/Geyser' && (github.ref_name == 'master' || startsWith(github.ref_name, 'api/') || startsWith(github.ref_name, 'feature/')) }}
-        run: ./gradlew publish
-        env:
-          BUILD_NUMBER: ${{ steps.release-info.outputs.curentRelease }}
-          ORG_GRADLE_PROJECT_geysermcUsername: ${{ vars.DEPLOY_USER }}
-          ORG_GRADLE_PROJECT_geysermcPassword: ${{ secrets.DEPLOY_PASS }}
-        
-      - name: Get Version
-        if: ${{ (success() || failure()) && github.repository == 'GeyserMC/Geyser' }}
-        id: get-version
+      - name: Check bundled resources
         run: |
-          version=$(cat gradle.properties | grep -o "version=[0-9\\.]*" | cut -d"=" -f2)
-          echo "VERSION=${version}" >> $GITHUB_OUTPUT
+          jar=bootstrap/velocity/build/libs/Geyser-Velocity.jar
+          for entry in languages/texts/en_US.properties mappings/blocks.nbt GeyserIntegratedPack.mcpack titan/fallback_block_tags.json; do
+            unzip -l "$jar" "$entry" > /dev/null || { echo "missing $entry in $jar"; exit 1; }
+          done
 
-      - name: Get Release Metadata
-        if: ${{ (success() || failure()) && github.repository == 'GeyserMC/Geyser' }}
-        uses: GeyserMC/actions/release@master
-        id: metadata
+      - name: Upload jar
+        uses: actions/upload-artifact@v6
         with:
-          appID: ${{ secrets.RELEASE_APP_ID }}
-          appPrivateKey: ${{ secrets.RELEASE_APP_PK }}
-          files: |
-            bungeecord:bootstrap/bungeecord/build/libs/Geyser-BungeeCord.jar
-            fabric:bootstrap/mod/fabric/build/libs/Geyser-Fabric.jar
-            neoforge:bootstrap/mod/neoforge/build/libs/Geyser-NeoForge.jar
-            spigot:bootstrap/spigot/build/libs/Geyser-Spigot.jar
-            standalone:bootstrap/standalone/build/libs/Geyser-Standalone.jar
-            velocity:bootstrap/velocity/build/libs/Geyser-Velocity.jar
-            viaproxy:bootstrap/viaproxy/build/libs/Geyser-ViaProxy.jar
-          releaseEnabled: false
-          saveMetadata: true
-          releaseProject: 'geyser'
-          releaseVersion: ${{ steps.get-version.outputs.VERSION }}
+          name: Geyser-Velocity
+          path: bootstrap/velocity/build/libs/Geyser-Velocity.jar
+          if-no-files-found: error
 
-      - name: Publish to Downloads API
-        if: ${{ success() && github.repository == 'GeyserMC/Geyser' && github.ref_name == 'master' }}
-        uses: GeyserMC/actions/upload-release@master
-        with:
-          username: ${{ vars.DOWNLOADS_USERNAME }}
-          privateKey: ${{ secrets.DOWNLOADS_PRIVATE_KEY }}
-          host: ${{ secrets.DOWNLOADS_SERVER_IP }}
-          files: |
-            bootstrap/bungeecord/build/libs/Geyser-BungeeCord.jar
-            bootstrap/mod/fabric/build/libs/Geyser-Fabric.jar
-            bootstrap/mod/neoforge/build/libs/Geyser-NeoForge.jar
-            bootstrap/spigot/build/libs/Geyser-Spigot.jar
-            bootstrap/standalone/build/libs/Geyser-Standalone.jar
-            bootstrap/velocity/build/libs/Geyser-Velocity.jar
-            bootstrap/viaproxy/build/libs/Geyser-ViaProxy.jar
-          changelog: ${{ steps.metadata.outputs.body }}
-
-      - name: Publish to Modrinth
-        if: ${{ success() && github.repository == 'GeyserMC/Geyser' && github.ref_name == 'master' }}
+      - name: Publish to R2
+        if: startsWith(github.ref, 'refs/tags/geyser-velocity-')
         env:
-          CHANGELOG: ${{ steps.metadata.outputs.body }}
-          BUILD_NUMBER: ${{ steps.release-info.outputs.curentRelease }}
-          MODRINTH_TOKEN: ${{ secrets.MODRINTH_TOKEN }}
-        run: ./gradlew modrinth
-
-      - name: Notify Discord
-        if: ${{ (success() || failure()) && github.repository == 'GeyserMC/Geyser' }}
-        uses: GeyserMC/actions/notify-discord@master
-        with:
-          discordWebhook: ${{ secrets.DISCORD_WEBHOOK }}
-          status: ${{ job.status }}
-          body: ${{ steps.metadata.outputs.body }}
-          includeDownloads: ${{ github.ref_name == 'master' }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+        run: |
+          key="releases/${GITHUB_REF_NAME}.jar"
+          # A published version is never replaced: the operator caches it by sha256.
+          if aws s3api head-object --endpoint-url "$R2_ENDPOINT" --bucket tessera-plugins --key "$key" > /dev/null 2>&1; then
+            echo "::error::$key already exists"; exit 1
+          fi
+          jar=bootstrap/velocity/build/libs/Geyser-Velocity.jar
+          aws s3 cp "$jar" "s3://tessera-plugins/$key" --endpoint-url "$R2_ENDPOINT"
+          echo "Published $key, sha256 $(sha256sum "$jar" | cut -d' ' -f1)" >> "$GITHUB_STEP_SUMMARY"
